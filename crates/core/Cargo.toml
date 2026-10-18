@@ -1,0 +1,11 @@
+[package]
+name = "spearfia-core"
+description = "Command layer, undo history and project model. Every UI, CLI, MCP and API action is a typed command here, so AI and human edits share one undo history."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+

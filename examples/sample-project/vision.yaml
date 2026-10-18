@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://spearfia.dev/schemas/vision/v1.json
+name: sample-video
+extends: chaotic-gaming-comedy
+goal: Make a first-time drifter's failure funny, then earn the one clean slide.
+pacing:
+  avg_shot_seconds: 1.8
+  max_silence_seconds: 0.3
+  cut_style: jump
+script_rules:
+  - Open on the failure, explain later.
+  - One joke per beat, never two.
+weights:
+  record-scratch: 0.8
+  whip-pan: 0.5
+  lens-flare: -0.7
+avoid:
+  - stock "epic" trailer music
+references:
+  - url: https://www.youtube.com/
+    note: Placeholder reference

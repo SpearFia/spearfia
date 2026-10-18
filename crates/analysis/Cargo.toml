@@ -1,0 +1,11 @@
+[package]
+name = "spearfia-analysis"
+description = "Analysis sidecars: read and write per-media analysis files (frames + rational timebase, IDs, analyzer version) and run analyzers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+spearfia-core.workspace = true

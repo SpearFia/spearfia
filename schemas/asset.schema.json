@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/asset/v1.json",
+  "title": "Spear Fia asset descriptor",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "kind",
+    "license",
+    "source",
+    "hash"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+      "description": "<namespace>/<name>@<semver>"
+    },
+    "name": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "effect",
+        "transition",
+        "sfx",
+        "music",
+        "template",
+        "preset",
+        "recipe",
+        "lut",
+        "font",
+        "broll"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "description": "One sentence an AI can use to decide whether this asset fits"
+    },
+    "license": {
+      "type": "string",
+      "description": "SPDX license expression"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "local",
+            "git",
+            "registry",
+            "url",
+            "third-party"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "author": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Hash of the asset's primary file"
+    },
+    "hosts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "host",
+          "format",
+          "path"
+        ],
+        "properties": {
+          "host": {
+            "enum": [
+              "filmcraft",
+              "resolve",
+              "any"
+            ]
+          },
+          "format": {
+            "enum": [
+              "dctl",
+              "ofx",
+              "wgsl",
+              "fusion-macro",
+              "fuse",
+              "cube",
+              "audio",
+              "video",
+              "image"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Path relative to the descriptor"
+          },
+          "min_version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)*$",
+            "description": "Referenced as <asset>#<capability id>"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "properties": {
+                "type": {
+                  "enum": [
+                    "float",
+                    "int",
+                    "bool",
+                    "enum",
+                    "color",
+                    "point",
+                    "string"
+                  ]
+                },
+                "default": {},
+                "min": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Analysis kind this capability needs, e.g. face_track"
+            }
+          },
+          "binds": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "description": "Analysis path that drives this input, e.g. face_track.center"
+            },
+            "description": "Input name → analysis path"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "TODO: preview media, per-host parameter mapping."
+}

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/timeline-plan/v1.json",
+  "title": "Spear Fia timeline plan (pushed to the editor)",
+  "type": "object",
+  "required": [
+    "timebase",
+    "items"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "base_snapshot": {
+      "type": "string",
+      "description": "ID of the last-synced snapshot this plan was compiled against"
+    },
+    "timebase": {
+      "type": "object",
+      "required": [
+        "num",
+        "den"
+      ],
+      "properties": {
+        "num": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "den": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true,
+      "description": "Rational frame rate, e.g. 60000/1001 for 59.94 fps"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "cue_id",
+          "kind",
+          "track",
+          "start_frame",
+          "duration_frames"
+        ],
+        "properties": {
+          "cue_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+            "description": "Script cue ID ({#id}); stored in the editor item's metadata"
+          },
+          "kind": {
+            "enum": [
+              "clip",
+              "transition",
+              "effect",
+              "music",
+              "sfx",
+              "title"
+            ]
+          },
+          "track": {
+            "type": "string",
+            "description": "e.g. V1, V2, A1"
+          },
+          "start_frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_frames": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "type": "object",
+            "required": [],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "asset": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+              },
+              "in_frame": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": true
+          },
+          "apply": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?)?#[a-z0-9][a-z0-9.-]*$",
+            "description": "Capability to apply (effects and looks)"
+          },
+          "params": {
+            "type": "object"
+          },
+          "intent": {
+            "type": "object",
+            "required": [],
+            "properties": {
+              "start_frame": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "duration_frames": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": true,
+            "description": "Timing the script asked for, kept separate from the actual timing"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "TODO: transaction/ordering semantics, track creation."
+}

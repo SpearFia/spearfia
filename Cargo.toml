@@ -1,0 +1,43 @@
+[workspace]
+resolver = "3"
+members = [
+  "apps/cli",
+  "apps/desktop/src-tauri",
+  "crates/core",
+  "crates/script",
+  "crates/catalog",
+  "crates/vision",
+  "crates/analysis",
+  "crates/sync",
+  "crates/ai",
+  "crates/mcp",
+  "crates/adapters/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Caesar Fia and Spear Fia contributors"]
+repository = "https://github.com/spearfia/spearfia"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+spearfia-core = { path = "crates/core" }
+spearfia-script = { path = "crates/script" }
+spearfia-catalog = { path = "crates/catalog" }
+spearfia-vision = { path = "crates/vision" }
+spearfia-analysis = { path = "crates/analysis" }
+spearfia-sync = { path = "crates/sync" }
+spearfia-ai = { path = "crates/ai" }
+spearfia-mcp = { path = "crates/mcp" }
+spearfia-adapter-filmcraft = { path = "crates/adapters/filmcraft" }
+
+# See https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

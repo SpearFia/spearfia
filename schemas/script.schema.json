@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/script/v1.json",
+  "title": "Spear Fia script front matter",
+  "type": "object",
+  "required": [
+    "title",
+    "format"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "format": {
+      "enum": [
+        "short",
+        "long",
+        "other"
+      ]
+    },
+    "vision": {
+      "type": "string",
+      "description": "Path to the vision file, relative to the script"
+    },
+    "language": {
+      "type": "string",
+      "description": "BCP 47 tag"
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "Validates the YAML front matter of script.md. The body directives (:sfx[] :music[] :transition[] :clip[] :look[] :vision{} and {#id}) are specified in docs/script-directives.md. TODO: machine-readable directive grammar."
+}

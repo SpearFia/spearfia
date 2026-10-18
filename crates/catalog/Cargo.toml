@@ -1,0 +1,11 @@
+[package]
+name = "spearfia-catalog"
+description = "Asset catalog: indexing and search over pluggable sources (local folders now; a Git-based registry and third-party APIs later)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+spearfia-core.workspace = true

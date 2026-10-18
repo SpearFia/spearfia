@@ -1,0 +1,11 @@
+[package]
+name = "spearfia-sync"
+description = "Two-way editor sync: compiles timeline plans, keeps the cue ID map, and three-way merges editor changes against the last-synced snapshot."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+spearfia-core.workspace = true

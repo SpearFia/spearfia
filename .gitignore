@@ -1,0 +1,33 @@
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Media: never committed (lives on the external drive)
+*.mp4
+*.mov
+*.mkv
+*.m4v
+*.braw
+*.wav
+*.mp3
+*.flac
+*.aac
+*.exr
+*.drp

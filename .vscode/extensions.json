@@ -1,0 +1,5 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer", "vadimcn.vscode-lldb", "tamasfe.even-better-toml", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode", "tauri-apps.tauri-vscode", "redhat.vscode-yaml", "davidanson.vscode-markdownlint", "editorconfig.editorconfig", "github.vscode-github-actions"
+  ]
+}
