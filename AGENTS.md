@@ -4,7 +4,7 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
 
 ## Layout
 
-- `apps/desktop/`: Tauri 2 app, React + TypeScript UI (`@spearfia/desktop`); Rust side in `src-tauri/`.
+- `apps/desktop/`: `spearfia-desktop`, the native desktop app (egui/eframe 0.36, like FilmCraft). All Rust, no web UI.
 - `apps/cli/`: `spearfia-cli`, binary `spearfia`.
 - `crates/<name>/`: `spearfia-<name>` libraries: `core` (command layer, undo, project model),
   `script`, `catalog` (`src/sources/`), `vision`, `analysis`, `sync`, `ai`, `mcp`.
@@ -16,14 +16,11 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
 ## Commands
 
 ```powershell
-pnpm install
+cargo run -p spearfia-desktop     # run the desktop app
+cargo run -p spearfia-cli         # run the CLI
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-pnpm -r lint
-pnpm -r build
-pnpm dev            # run the desktop app
-cargo run -p spearfia-cli
 ```
 
 All UI, CLI and MCP actions go through the command layer in `spearfia-core`. Don't add a

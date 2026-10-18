@@ -2,7 +2,7 @@
 resolver = "3"
 members = [
   "apps/cli",
-  "apps/desktop/src-tauri",
+  "apps/desktop",
   "crates/core",
   "crates/script",
   "crates/catalog",
@@ -24,6 +24,8 @@ repository = "https://github.com/spearfia/spearfia"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+egui = "0.36"
+eframe = { version = "0.36", default-features = false }
 spearfia-core = { path = "crates/core" }
 spearfia-script = { path = "crates/script" }
 spearfia-catalog = { path = "crates/catalog" }
@@ -34,10 +36,7 @@ spearfia-ai = { path = "crates/ai" }
 spearfia-mcp = { path = "crates/mcp" }
 spearfia-adapter-filmcraft = { path = "crates/adapters/filmcraft" }
 
-# See https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
+lto = "thin"
 codegen-units = 1
-lto = true
-opt-level = 3
-panic = "abort"
 strip = true

@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Run Spear Fia desktop",
+      "cargo": { "args": ["build", "-p", "spearfia-desktop"] },
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

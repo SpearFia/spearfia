@@ -1,6 +1,6 @@
 # 2. Stack: Tauri, Rust and React
 
-- Status: accepted
+- Status: superseded by [ADR 0004](0004-native-ui-egui.md)
 - Date: 2026-10-18
 
 ## Context
