@@ -107,6 +107,7 @@ impl TransitionsStage {
             .or_else(|| (!all.is_empty()).then_some(0));
 
         let mut edit: Option<Edit> = None;
+        let mut undo = false;
 
         Panel::right("transitions-inspector")
             .exact_size(330.0)
@@ -135,7 +136,7 @@ impl TransitionsStage {
         egui::CentralPanel::default()
             .frame(panel(theme::BG_APP).inner_margin(Margin::symmetric(22, 16)))
             .show(ui, |ui| {
-                self.header(ui, &all);
+                undo = self.header(ui, &all);
                 ui.add_space(10.0);
                 let shown: Vec<usize> = (0..all.len())
                     .filter(|&i| match self.filter {
@@ -178,46 +179,56 @@ impl TransitionsStage {
         if let Some(e) = edit {
             self.apply(project, script, e);
         }
-    }
-
-    fn apply(&mut self, project: &Project, script: &mut ScriptStage, e: Edit) {
-        let src = script.source().to_owned();
-        let parsed = spearfia_script::parse(&src);
-        let tl = timing::timeline(&parsed);
-        let all = cuts::cuts(&parsed, &tl);
-        let out = match e {
-            Edit::Set(i, label) => all.get(i).and_then(|c| cuts::set(&src, &parsed, c, &label)),
-            Edit::Clear(i) => all.get(i).and_then(|c| cuts::clear(&src, &parsed, c)),
-            Edit::Duration(i, d) => all.get(i).and_then(|c| cuts::set_duration(&src, c, d)),
-            Edit::ApplyToUnset(label) => {
-                // One at a time from the end, so earlier cuts' positions don't move.
-                let mut s = src.clone();
-                let n = all.len();
-                for k in (0..n).rev() {
-                    let p = spearfia_script::parse(&s);
-                    let cs = cuts::cuts(&p, &timing::timeline(&p));
-                    if let Some(c) = cs.get(k).filter(|c| c.unset())
-                        && let Some(next) = cuts::set(&s, &p, c, &label)
-                    {
-                        s = next;
-                    }
-                }
-                Some(s)
-            }
-        };
-        let Some(out) = out else {
-            self.error = Some("Couldn't change that transition.".into());
-            return;
-        };
-        if out != src {
-            match script.apply_edit(project, out) {
-                Ok(()) => self.error = None,
-                Err(e) => self.error = Some(e),
-            }
+        if undo {
+            self.undo(project, script);
         }
     }
 
-    fn header(&mut self, ui: &mut egui::Ui, all: &[Cut]) {
+    /// Run the edit through the command layer: plan from the saved script, apply only if the
+    /// file hasn't changed, record it for undo.
+    fn apply(&mut self, project: &Project, script: &mut ScriptStage, e: Edit) {
+        use spearfia_ops::{Doc, Origin, transitions as t};
+        if let Err(e) = script.flush(project) {
+            self.error = Some(e);
+            return;
+        }
+        let result = Doc::main(project).and_then(|doc| {
+            let plan = match e {
+                Edit::Set(i, label) => t::set(&doc, i, &label),
+                Edit::Clear(i) => t::clear(&doc, i),
+                Edit::Duration(i, d) => t::set_duration(&doc, i, d),
+                Edit::ApplyToUnset(label) => t::fill_unset(&doc, &label),
+            }?;
+            spearfia_ops::apply(project, &plan, Origin::App)?;
+            Ok(plan.text)
+        });
+        match result {
+            Ok(text) => {
+                script.adopt(text);
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e.to_string()),
+        }
+    }
+
+    /// Undo the last change in the project's shared history (from the app or the CLI).
+    fn undo(&mut self, project: &Project, script: &mut ScriptStage) {
+        if let Err(e) = script.flush(project) {
+            self.error = Some(e);
+            return;
+        }
+        match spearfia_ops::undo(project).and_then(|_| Ok(spearfia_ops::Doc::main(project)?.text)) {
+            Ok(text) => {
+                script.adopt(text);
+                self.error = None;
+            }
+            Err(e) => self.error = Some(e.to_string()),
+        }
+    }
+
+    /// Returns whether Undo was clicked.
+    fn header(&mut self, ui: &mut egui::Ui, all: &[Cut]) -> bool {
+        let mut undo = false;
         ui.horizontal(|ui| {
             ui.label(strong("Transitions", 16.0));
             ui.label(muted("every cut between script lines and sections"));
@@ -225,6 +236,10 @@ impl TransitionsStage {
                 ui.label(text(e, 12.0, theme::DANGER));
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                undo = widgets::button(ui, "Undo")
+                    .on_hover_text("Undo the last change to the script, from here or the CLI")
+                    .clicked();
+                ui.add_space(8.0);
                 let count = |f: Filter| {
                     all.iter()
                         .filter(|c| match f {
@@ -269,6 +284,7 @@ impl TransitionsStage {
                 }
             });
         });
+        undo
     }
 
     #[allow(clippy::too_many_arguments)]
