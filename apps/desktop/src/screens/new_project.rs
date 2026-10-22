@@ -223,17 +223,40 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    // One column, top to bottom: each step opens below the one before.
-                    ui.set_max_width(760.0);
-                    basics(form, ui);
-                    ui.add_space(12.0);
-                    vision(form, ui);
-                    ui.add_space(12.0);
-                    script(form, ui);
-                    ui.add_space(12.0);
-                    media(form, ui);
-                    ui.add_space(12.0);
-                    filmcraft(form, ui, app.filmcraft.is_some());
+                    // One centered column, top to bottom: each step opens below the one
+                    // before. Text and fields are a size up from the rest of the app,
+                    // since this is the first screen a new user fills in.
+                    let w = ui.available_width().min(880.0);
+                    let pad = (ui.available_width() - w) / 2.0;
+                    ui.horizontal(|ui| {
+                        ui.add_space(pad);
+                        ui.vertical(|ui| {
+                            ui.set_width(w);
+                            let s = ui.style_mut();
+                            for (style, size) in [
+                                (egui::TextStyle::Body, 15.0),
+                                (egui::TextStyle::Button, 15.0),
+                                (egui::TextStyle::Monospace, 14.0),
+                                (egui::TextStyle::Small, 12.5),
+                            ] {
+                                if let Some(f) = s.text_styles.get_mut(&style) {
+                                    f.size = size;
+                                }
+                            }
+                            s.spacing.interact_size.y = 32.0;
+                            s.spacing.button_padding = egui::vec2(12.0, 6.0);
+                            s.spacing.item_spacing.y = 8.0;
+                            basics(form, ui);
+                            ui.add_space(14.0);
+                            vision(form, ui);
+                            ui.add_space(14.0);
+                            script(form, ui);
+                            ui.add_space(14.0);
+                            media(form, ui);
+                            ui.add_space(14.0);
+                            filmcraft(form, ui, app.filmcraft.is_some());
+                        });
+                    });
                 });
         });
 
@@ -280,62 +303,64 @@ fn step(
     } else {
         theme::BORDER
     };
-    let r = card(theme::BG_PANEL, border).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        let head = ui
-            .horizontal(|ui| {
-                widgets::tag(
-                    ui,
-                    &(i + 1).to_string(),
-                    if finished { theme::OK } else { theme::TEXT },
-                );
-                ui.label(strong(title, 13.5));
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let mut glyph = |icon, color| {
-                        let (r, _) =
-                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                        crate::icons::paint(ui.painter(), r, icon, color);
-                    };
-                    if !open {
-                        glyph(crate::icons::Icon::Down, theme::TEXT_MUTED);
+    let r = card(theme::BG_PANEL, border)
+        .inner_margin(Margin::same(18))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let head = ui
+                .horizontal(|ui| {
+                    widgets::tag(
+                        ui,
+                        &(i + 1).to_string(),
+                        if finished { theme::OK } else { theme::TEXT },
+                    );
+                    ui.label(strong(title, 17.0));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let mut glyph = |icon, color| {
+                            let (r, _) = ui
+                                .allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                            crate::icons::paint(ui.painter(), r, icon, color);
+                        };
+                        if !open {
+                            glyph(crate::icons::Icon::Down, theme::TEXT_MUTED);
+                        }
+                        if finished {
+                            glyph(crate::icons::Icon::Check, theme::OK);
+                        }
+                        if !open {
+                            ui.add(egui::Label::new(muted(summary)).truncate());
+                        }
+                    });
+                })
+                .response
+                .interact(egui::Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if head.clicked() {
+                f.open[i] = !open;
+            }
+            if !open {
+                return;
+            }
+            ui.add_space(8.0);
+            body(f, ui);
+            if i + 1 < STEPS {
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    let go = ui
+                        .add_enabled_ui(ready.is_ok(), |ui| widgets::primary_button(ui, "Continue"))
+                        .inner;
+                    if let Err(why) = ready {
+                        ui.label(muted(why));
                     }
-                    if finished {
-                        glyph(crate::icons::Icon::Check, theme::OK);
-                    }
-                    if !open {
-                        ui.add(egui::Label::new(muted(summary)).truncate());
+                    if go.clicked() {
+                        f.done[i] = true;
+                        f.open[i] = false;
+                        f.open[i + 1] = true;
+                        f.scroll_to = Some(i + 1);
                     }
                 });
-            })
-            .response
-            .interact(egui::Sense::click())
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-        if head.clicked() {
-            f.open[i] = !open;
-        }
-        if !open {
-            return;
-        }
-        ui.add_space(8.0);
-        body(f, ui);
-        if i + 1 < STEPS {
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                let go = ui
-                    .add_enabled_ui(ready.is_ok(), |ui| widgets::primary_button(ui, "Continue"))
-                    .inner;
-                if let Err(why) = ready {
-                    ui.label(muted(why));
-                }
-                if go.clicked() {
-                    f.done[i] = true;
-                    f.open[i] = false;
-                    f.open[i + 1] = true;
-                    f.scroll_to = Some(i + 1);
-                }
-            });
-        }
-    });
+            }
+        });
     if f.scroll_to == Some(i) {
         r.response.scroll_to_me(Some(Align::TOP));
         f.scroll_to = None;
@@ -343,7 +368,7 @@ fn step(
 }
 
 fn field_label(ui: &mut egui::Ui, s: &str) {
-    ui.label(text(s, 11.5, theme::TEXT_2));
+    ui.label(text(s, 13.5, theme::TEXT_2));
 }
 
 fn basics(f: &mut NewProjectForm, ui: &mut egui::Ui) {
@@ -471,7 +496,7 @@ fn vision(f: &mut NewProjectForm, ui: &mut egui::Ui) {
                 ui.label(
                     text(
                         p.title,
-                        12.5,
+                        15.0,
                         if on { theme::CUE_VISION } else { theme::TEXT },
                     )
                     .strong(),
