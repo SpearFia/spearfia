@@ -7,7 +7,7 @@
 //! The format is not in `spearfia-spec` yet; it needs a `comments` schema there.
 
 use crate::error::{CoreError, Result};
-use crate::project::{Project, write_json};
+use crate::project::{Project, ensure_loadable, write_json};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::ops::Range;
@@ -46,6 +46,9 @@ pub struct Comment {
 pub struct Comments {
     #[serde(default)]
     pub comments: Vec<Comment>,
+    /// The number the next new id gets, so a deleted comment's id is never handed out again.
+    #[serde(default)]
+    pub next_id: u32,
 }
 
 impl Comments {
@@ -59,11 +62,15 @@ impl Comments {
         }
     }
 
+    /// Write `comments.json`. Refuses if the file on disk can't be read, so a load failure
+    /// never turns into an empty file.
     pub fn save(&self, project: &Project) -> Result<()> {
-        write_json(&project.root.join(COMMENTS_FILE), self)
+        let path = project.root.join(COMMENTS_FILE);
+        ensure_loadable::<Self>(&path)?;
+        write_json(&path, self)
     }
 
-    /// Add a comment and return its id (`c1`, `c2`, ...).
+    /// Add a comment and return its id (`c1`, `c2`, ...). Ids are never reused.
     pub fn add(&mut self, mut c: Comment) -> String {
         let n = self
             .comments
@@ -71,7 +78,9 @@ impl Comments {
             .filter_map(|c| c.id.strip_prefix('c')?.parse::<u32>().ok())
             .max()
             .unwrap_or(0)
-            + 1;
+            .saturating_add(1)
+            .max(self.next_id);
+        self.next_id = n.saturating_add(1);
         c.id = format!("c{n}");
         let id = c.id.clone();
         self.comments.push(c);
@@ -92,6 +101,15 @@ impl Comments {
             .iter()
             .filter(move |c| !c.resolved && c.doc == doc)
     }
+}
+
+/// `src` with the suggestion applied: its quote, found again, replaced by its text. `None`
+/// when the comment isn't a suggestion or its quote is no longer in `src`; then nothing
+/// should be resolved, because the change was not made.
+pub fn apply_suggestion(src: &str, c: &Comment) -> Option<String> {
+    let s = c.suggestion.as_deref()?;
+    let r = find_quote(src, &c.quote, c.line)?;
+    Some(format!("{}{s}{}", &src[..r.start], &src[r.end..]))
 }
 
 /// Find `quote` in `src` again: the occurrence whose line is closest to `line_hint`.
@@ -154,6 +172,51 @@ mod tests {
         assert_eq!(c.open_on("script/bible.md").count(), 0);
         c.remove("c1");
         assert_eq!(c.add(comment("c", 2)), "c3");
+        // Deleting the newest comment must not free its id.
+        c.remove("c3");
+        assert_eq!(c.add(comment("d", 3)), "c4");
+        let back: Comments = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back.clone().add(comment("e", 4)), "c5");
+    }
+
+    #[test]
+    fn suggestions_apply_only_where_the_quote_still_is() {
+        let mut s = comment("24 hours", 0);
+        s.suggestion = Some("8 hours".into());
+        assert_eq!(
+            apply_suggestion("I spent 24 hours\n", &s).as_deref(),
+            Some("I spent 8 hours\n")
+        );
+        assert_eq!(
+            apply_suggestion("I spent a day\n", &s),
+            None,
+            "quote edited away"
+        );
+        assert_eq!(
+            apply_suggestion("I spent 24 hours\n", &comment("24", 0)),
+            None,
+            "not a suggestion"
+        );
+    }
+
+    #[test]
+    fn never_overwrites_an_unreadable_file() {
+        let root = crate::testutil::temp_dir("comments");
+        let p = Project {
+            file: serde_json::from_value(serde_json::json!({
+                "name": "t", "spec_version": 1, "adapter": "filmcraft"
+            }))
+            .unwrap(),
+            root,
+        };
+        let path = p.root.join(COMMENTS_FILE);
+        // Valid JSON but not a comments file: loading fails, so saving must too.
+        fs::write(&path, r#"{ "comments": [ { "id": 7 } ] }"#).unwrap();
+        assert!(Comments::load(&p).is_err());
+        assert!(Comments::default().save(&p).is_err());
+        assert!(fs::read_to_string(&path).unwrap().contains("\"id\": 7"));
+        fs::remove_file(&path).unwrap();
+        Comments::default().save(&p).unwrap();
     }
 
     #[test]

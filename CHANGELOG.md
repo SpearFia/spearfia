@@ -164,6 +164,24 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   panicking.
 - The SFX spec-example test reads a pinned copy of `spearfia-spec/examples/script/script.md`
   (`crates/script/tests/fixtures/`).
+- Data loss (AI-readiness audit, milestone M0):
+  - Project files are written atomically (temp file, flush, rename), so a crash mid-save
+    leaves the old file instead of a truncated one.
+  - `links.json` and `comments.json` are never overwritten when the file on disk can't be
+    read. Before, a load failure became an empty list and the next save wiped the file.
+  - `links.json` entries this version can't read are kept and written back, instead of
+    being dropped on the next save.
+  - Link and comment ids are never reused after a delete (`next_id` counter in the file).
+  - A script or tab that failed to load is never saved, so typing into the empty page
+    can't overwrite the real file.
+  - `edit::replace_cue` and `remove_cue` refuse when the text at the cue's position is no
+    longer that cue (the file changed since it was parsed), instead of editing the wrong
+    bytes.
+  - `Directive::to_source` cleans labels, keys and values (`"`, `{`, `}`, line breaks), so a
+    written cue always parses back with its id.
+  - Accepting a suggestion whose quoted text was edited away now says so and leaves it
+    open, instead of marking it resolved without changing anything. Suggestions only apply
+    to their own document (`comments::apply_suggestion`).
 
 ### Spec follow-up
 
@@ -171,7 +189,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `media_folders` and `filmcraft`. The schema allows them (`additionalProperties`), but they
   should be named in `spearfia-spec` before the next release.
 - `links.json` needs a `links` schema in `spearfia-spec` (fields: `id`, `quote`, `line`,
-  `media.path`, `media.hash`, `role`, `kind`, `in`, `out`).
+  `media.path`, `media.hash`, `role`, `kind`, `in`, `out`), plus the top-level `next_id`.
 - `script.md`: a line that is only a `:transition[...]` directive is a divider, and a line
   starting with `[` is an on-screen direction. Add both to `docs/script-directives.md`.
 - `script.md` music cues: `:music[track]` plays until the next music cue, and
@@ -182,7 +200,9 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `script.md`: document the `styles:` front-matter block, `{...}` paragraph overrides and
   `[text]{...}` spans (keys: font, size, color, highlight, bold, italic, align, spacing).
 - `comments.json` needs a `comments` schema (`id`, `doc`, `quote`, `line`, `author`, `body`,
-  `created`, `suggestion`, `resolved`, `replies`).
+  `created`, `suggestion`, `resolved`, `replies`), plus the top-level `next_id`.
+- `script.md` escaping: until the spec defines it, `"`, `{` and `}` are dropped from cue
+  attribute values when the app writes them.
 - `*.asset.json`: name the `audio` object (`bpm`, `seconds`, `markers[{name, at}]`) in the
   `asset` schema.
 - `script.md` looks: on a line a `:look` covers that line, or `lines=N` lines from there; on

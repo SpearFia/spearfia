@@ -363,6 +363,8 @@ struct Buf {
     dirty: bool,
     last_edit: f64,
     error: Option<String>,
+    /// The file couldn't be read, so `source` is empty, not the document: never save it.
+    load_failed: bool,
 }
 
 impl Buf {
@@ -378,6 +380,7 @@ impl Buf {
             source,
             dirty: false,
             last_edit: 0.0,
+            load_failed: error.is_some(),
             error,
         }
     }
@@ -389,6 +392,13 @@ impl Buf {
     }
 
     fn save(&mut self, project: &Project) {
+        if self.load_failed {
+            self.error = Some(format!(
+                "Not saved: {} couldn't be read when it was opened. Fix it, then File → Reload.",
+                self.file_name()
+            ));
+            return;
+        }
         match project.write_doc(&self.rel, &self.source) {
             Ok(()) => {
                 self.dirty = false;
@@ -2422,14 +2432,21 @@ impl ScriptStage {
                     return;
                 };
                 let b = self.buf_mut();
-                if let (Some(r), Some(s)) = (
-                    comments::find_quote(&b.source, &c.quote, c.line),
-                    &c.suggestion,
-                ) {
-                    b.source = format!("{}{s}{}", &b.source[..r.start], &b.source[r.end..]);
-                    b.changed(0.0);
-                    b.save(project);
-                }
+                // The suggestion belongs to one document; only apply it there.
+                let applied = (b.rel == c.doc)
+                    .then(|| comments::apply_suggestion(&b.source, &c))
+                    .flatten();
+                let Some(out) = applied else {
+                    self.comments_error = Some(format!(
+                        "The suggestion wasn't applied: \"{}\" is no longer in {}. Edit the text by hand, or delete the suggestion.",
+                        short(&c.quote, 60),
+                        c.doc
+                    ));
+                    return;
+                };
+                b.source = out;
+                b.changed(0.0);
+                b.save(project);
                 if let Some(c) = self.comments.get_mut(id) {
                     c.resolved = true;
                 }
@@ -3700,6 +3717,36 @@ fn set_front_matter(src: &str, key: &str, value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_doc_that_failed_to_load_is_never_saved() {
+        let root = std::env::temp_dir().join(format!("spearfia-buf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // A folder where the script should be: reading it fails.
+        std::fs::create_dir_all(root.join("script/script.md")).unwrap();
+        let project = Project {
+            file: serde_json::from_value(serde_json::json!({
+                "name": "t", "spec_version": 1, "adapter": "filmcraft"
+            }))
+            .unwrap(),
+            root: root.clone(),
+        };
+        let mut b = Buf::load(&project, "script/script.md", true);
+        assert!(b.load_failed && b.source.is_empty());
+        b.source = "typed into the empty page".into();
+        b.changed(1.0);
+        b.save(&project);
+        assert!(
+            b.error
+                .as_deref()
+                .is_some_and(|e| e.starts_with("Not saved"))
+        );
+        assert!(
+            root.join("script/script.md").is_dir(),
+            "nothing was written"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn slash_opens_on_typing() {
