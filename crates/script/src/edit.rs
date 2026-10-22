@@ -4,21 +4,43 @@
 
 use crate::{Block, Directive, LineKind, Script, Segment};
 
+/// Make an attribute value safe inside `{...}`.
+// shortcut: drops `"`, `{` and `}` because script.md has no escaping yet; switch to real
+// escaping once spearfia-spec defines it (docs/script-directives.md, "TODO: escaping").
+fn clean_value(v: &str) -> String {
+    v.chars()
+        .filter(|c| !matches!(c, '"' | '{' | '}' | '\n' | '\r'))
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+/// Make an attribute key safe: letters, digits, `-`, `_` and `.` only.
+fn clean_key(k: &str) -> String {
+    k.chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect()
+}
+
 impl Directive {
-    /// The directive as written in `script.md`: `:name[label]{key=value #id}`.
+    /// The directive as written in `script.md`: `:name[label]{key=value #id}`. Labels, keys
+    /// and values are cleaned of characters that would end the directive early, so the
+    /// written cue always parses back with the same id.
     pub fn to_source(&self) -> String {
         let mut s = format!(":{}", self.name);
         if let Some(l) = &self.label {
             s.push('[');
-            s.push_str(l);
+            s.push_str(&clean_label(l));
             s.push(']');
         }
         let mut inner: Vec<String> = self
             .attrs
             .iter()
+            .map(|(k, v)| (clean_key(k), clean_value(v)))
+            .filter(|(k, _)| !k.is_empty())
             .map(|(k, v)| {
                 if v.is_empty() {
-                    k.clone()
+                    k
                 } else if v.chars().any(char::is_whitespace) {
                     format!("{k}=\"{v}\"")
                 } else {
@@ -135,7 +157,9 @@ pub fn add_cue(src: &str, script: &Script, block: usize, cue: &str) -> Option<St
 /// Replace a directive's text (found by its span) with `new`.
 pub fn replace_cue(src: &str, old: &Directive, new: &Directive) -> Option<String> {
     let span = old.span.clone();
-    src.get(span.clone())?;
+    if !still_at(src, old) {
+        return None;
+    }
     Some(format!(
         "{}{}{}",
         &src[..span.start],
@@ -144,11 +168,20 @@ pub fn replace_cue(src: &str, old: &Directive, new: &Directive) -> Option<String
     ))
 }
 
+/// Whether `src` still holds exactly this directive at its span. False when the text was
+/// edited after `d` was parsed, so an edit never lands on the wrong bytes.
+fn still_at(src: &str, d: &Directive) -> bool {
+    src.get(d.span.clone())
+        .is_some_and(|text| matches!(crate::segments(text, d.span.start).as_slice(), [Segment::Cue(c)] if c == d))
+}
+
 /// Remove a directive and one space next to it.
 pub fn remove_cue(src: &str, d: &Directive) -> Option<String> {
     let mut start = d.span.start;
     let mut end = d.span.end;
-    src.get(start..end)?;
+    if !still_at(src, d) {
+        return None;
+    }
     if src[..start].ends_with(' ') {
         start -= 1;
     } else if src[end..].starts_with(' ') {
@@ -271,5 +304,41 @@ mod tests {
         let src = "## A   \nx\n";
         let out = add_cue(src, &parse(src), 0, ":look[g]{#l1}").unwrap();
         assert_eq!(out, "## A :look[g]{#l1}   \nx\n");
+    }
+
+    #[test]
+    fn stale_edits_are_refused() {
+        let before = "## Hook\nNever drifted :sfx[boom]{#s1} at all.\n";
+        let cue = directives(&parse(before)).next().unwrap().clone();
+        // The file changed after `cue` was parsed: its bytes moved.
+        let after = "## Hook\nI have never drifted :sfx[boom]{#s1} at all.\n";
+        let mut renamed = cue.clone();
+        renamed.label = Some("whoosh".into());
+        assert_eq!(replace_cue(after, &cue, &renamed), None);
+        assert_eq!(remove_cue(after, &cue), None);
+        // Same bytes, different cue at that span: also refused.
+        let swapped = "## Hook\nNever drifted :sfx[bang]{#s1} at all.\n";
+        assert_eq!(remove_cue(swapped, &cue), None);
+        // Unchanged text still works.
+        assert_eq!(
+            remove_cue(before, &cue).as_deref(),
+            Some("## Hook\nNever drifted at all.\n")
+        );
+    }
+
+    #[test]
+    fn unsafe_values_cannot_break_the_cue() {
+        let src = "## Hook\n[ON SCREEN: title] :look[chapter-card]{#l1}\n";
+        let cue = directives(&parse(src)).next().unwrap().clone();
+        let mut d = cue.clone();
+        d.label = Some("chapter]card".into());
+        d.attrs.push(("text".into(), "Part 1} \"Go\"\n".into()));
+        d.attrs.push(("bad key}".into(), "x".into()));
+        let out = replace_cue(src, &cue, &d).unwrap();
+        let back = directives(&parse(&out)).next().unwrap().clone();
+        assert_eq!(back.id.as_deref(), Some("l1"), "{out}");
+        assert_eq!(back.label.as_deref(), Some("chaptercard"));
+        assert_eq!(back.attr("text"), Some("Part 1 Go"));
+        assert_eq!(back.attr("badkey"), Some("x"));
     }
 }

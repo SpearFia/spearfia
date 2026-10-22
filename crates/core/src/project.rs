@@ -471,11 +471,41 @@ fn create_dir(path: &Path) -> Result<()> {
     fs::create_dir_all(path).map_err(|e| CoreError::io(path, e))
 }
 
+/// Write `text` to `path` atomically: a crash mid-write leaves the old file, never a
+/// truncated one. Writes a temp file beside it, flushes it to disk, then renames over it.
 pub(crate) fn write_text(path: &Path, text: &str) -> Result<()> {
+    use std::io::Write;
     if let Some(parent) = path.parent() {
         create_dir(parent)?;
     }
-    fs::write(path, text).map_err(|e| CoreError::io(path, e))
+    let name = path
+        .file_name()
+        .map_or_else(Default::default, |n| n.to_string_lossy());
+    let tmp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    let written = fs::File::create(&tmp).and_then(|mut f| {
+        f.write_all(text.as_bytes())?;
+        f.sync_all()
+    });
+    if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
+        let _ = fs::remove_file(&tmp);
+        return Err(CoreError::io(path, e));
+    }
+    Ok(())
+}
+
+/// Refuse to overwrite a JSON file that exists but can't be read as `T`: saving over it
+/// would replace whatever is in it with what the app holds (often an empty list).
+pub(crate) fn ensure_loadable<T: serde::de::DeserializeOwned>(path: &Path) -> Result<()> {
+    match fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str::<T>(&text).map(|_| ()).map_err(|e| {
+            CoreError::Invalid(format!(
+                "{} can't be read ({e}), so it wasn't overwritten. Fix or delete it, then try again.",
+                path.display()
+            ))
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(CoreError::io(path, e)),
+    }
 }
 
 pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
@@ -488,6 +518,33 @@ pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 mod tests {
     use super::*;
     use crate::testutil::temp_dir;
+
+    #[test]
+    fn writes_atomically_and_leaves_no_temp_file() {
+        let dir = temp_dir("atomic");
+        let path = dir.join("sub/script.md");
+        write_text(&path, "first").unwrap();
+        write_text(&path, "second").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+        let names: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["script.md"]);
+    }
+
+    #[test]
+    fn refuses_to_overwrite_unreadable_json() {
+        let dir = temp_dir("loadable");
+        let path = dir.join("links.json");
+        assert!(
+            ensure_loadable::<serde_json::Value>(&path).is_ok(),
+            "missing is fine"
+        );
+        fs::write(&path, "{ not json").unwrap();
+        let err = ensure_loadable::<serde_json::Value>(&path).unwrap_err();
+        assert!(err.to_string().contains("wasn't overwritten"), "{err}");
+    }
 
     fn spec(root: PathBuf) -> NewProject {
         NewProject {

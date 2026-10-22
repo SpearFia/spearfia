@@ -8,7 +8,7 @@
 //! The format is not in `spearfia-spec` yet; it needs a `links` schema there.
 
 use crate::error::{CoreError, Result};
-use crate::project::{MediaRole, Project, write_json};
+use crate::project::{MediaRole, Project, ensure_loadable, write_json};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -63,11 +63,18 @@ pub struct Link {
 pub struct Links {
     #[serde(default)]
     pub links: Vec<Link>,
+    /// The number the next new id gets, so a deleted link's id is never handed out again.
+    #[serde(default)]
+    pub next_id: u32,
+    /// Entries this version can't read (e.g. the older sample format with no `quote`).
+    /// Not shown, but written back unchanged so saving never deletes them.
+    #[serde(skip)]
+    pub unreadable: Vec<serde_json::Value>,
 }
 
 impl Links {
-    /// Read `links.json`; a missing file is an empty list. Entries in the older
-    /// sample format (no `quote`) are skipped rather than failing the whole file.
+    /// Read `links.json`; a missing file is an empty list. Entries that don't parse are
+    /// kept in [`Links::unreadable`] rather than failing the whole file.
     pub fn load(project: &Project) -> Result<Self> {
         let path = project.root.join(LINKS_FILE);
         let text = match fs::read_to_string(&path) {
@@ -77,24 +84,40 @@ impl Links {
         };
         let raw: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| CoreError::json(&path, e))?;
-        let links = raw
+        let mut out = Self {
+            next_id: raw
+                .get("next_id")
+                .and_then(|n| n.as_u64())
+                .map_or(0, |n| n as u32),
+            ..Self::default()
+        };
+        for v in raw
             .get("links")
             .and_then(|l| l.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|v| serde_json::from_value::<Link>(v.clone()).ok())
-                    .collect()
-            })
-            .unwrap_or_default();
-        Ok(Self { links })
+            .into_iter()
+            .flatten()
+        {
+            match serde_json::from_value::<Link>(v.clone()) {
+                Ok(l) => out.links.push(l),
+                Err(_) => out.unreadable.push(v.clone()),
+            }
+        }
+        Ok(out)
     }
 
+    /// Write `links.json`, unreadable entries included. Refuses if the file on disk can't
+    /// be read, so a load failure never turns into an empty file.
     pub fn save(&self, project: &Project) -> Result<()> {
-        write_json(&project.root.join(LINKS_FILE), self)
+        let path = project.root.join(LINKS_FILE);
+        ensure_loadable::<serde_json::Value>(&path)?;
+        let mut v = serde_json::to_value(self).map_err(|e| CoreError::json(&path, e))?;
+        if let Some(items) = v.get_mut("links").and_then(|l| l.as_array_mut()) {
+            items.extend(self.unreadable.iter().cloned());
+        }
+        write_json(&path, &v)
     }
 
-    /// Add a link and return its new id (`k1`, `k2`, ...).
+    /// Add a link and return its new id (`k1`, `k2`, ...). Ids are never reused.
     pub fn add(&mut self, mut link: Link) -> String {
         let next = self
             .links
@@ -102,7 +125,9 @@ impl Links {
             .filter_map(|l| l.id.strip_prefix('k')?.parse::<u32>().ok())
             .max()
             .unwrap_or(0)
-            + 1;
+            .saturating_add(1)
+            .max(self.next_id);
+        self.next_id = next.saturating_add(1);
         link.id = format!("k{next}");
         let id = link.id.clone();
         self.links.push(link);
@@ -220,7 +245,78 @@ mod tests {
         assert_eq!(links.add(link.clone()), "k1");
         assert_eq!(links.add(link.clone()), "k2");
         links.remove("k1");
-        assert_eq!(links.add(link), "k3");
+        assert_eq!(links.add(link.clone()), "k3");
         assert_eq!(links.uses("B-roll/a.mp4"), 2);
+        // Deleting the newest link must not free its id.
+        links.remove("k3");
+        assert_eq!(links.add(link), "k4");
+    }
+
+    fn project() -> Project {
+        let root = crate::testutil::temp_dir("links");
+        Project {
+            root,
+            file: serde_json::from_value(serde_json::json!({
+                "name": "t", "spec_version": 1, "adapter": "filmcraft"
+            }))
+            .unwrap(),
+        }
+    }
+
+    fn sample() -> Link {
+        Link {
+            id: String::new(),
+            quote: "a".into(),
+            line: 0,
+            media: LinkMedia {
+                path: "a.mp4".into(),
+                hash: None,
+            },
+            role: MediaRole::BRoll,
+            kind: LinkKind::Picture,
+            in_point: None,
+            out_point: None,
+        }
+    }
+
+    #[test]
+    fn unreadable_entries_survive_a_save() {
+        let p = project();
+        let old = serde_json::json!({ "cue_id": "c1", "media": { "path": "x.mp4" } });
+        fs::write(
+            p.root.join(LINKS_FILE),
+            serde_json::json!({ "links": [old] }).to_string(),
+        )
+        .unwrap();
+        let mut links = Links::load(&p).unwrap();
+        assert!(links.links.is_empty());
+        links.add(sample());
+        links.save(&p).unwrap();
+        let text = fs::read_to_string(p.root.join(LINKS_FILE)).unwrap();
+        assert!(text.contains("\"cue_id\": \"c1\""), "{text}");
+        assert_eq!(Links::load(&p).unwrap().links.len(), 1);
+    }
+
+    #[test]
+    fn ids_stay_unique_across_save_and_load() {
+        let p = project();
+        let mut links = Links::default();
+        links.add(sample());
+        links.add(sample());
+        links.remove("k2");
+        links.save(&p).unwrap();
+        assert_eq!(Links::load(&p).unwrap().add(sample()), "k3");
+    }
+
+    #[test]
+    fn never_overwrites_an_unreadable_file() {
+        let p = project();
+        let path = p.root.join(LINKS_FILE);
+        fs::write(&path, "{ \"links\": [ broken").unwrap();
+        assert!(Links::load(&p).is_err());
+        let mut fresh = Links::default();
+        fresh.add(sample());
+        assert!(fresh.save(&p).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{ \"links\": [ broken");
     }
 }
