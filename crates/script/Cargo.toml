@@ -1,0 +1,11 @@
+[package]
+name = "spearfia-script"
+description = "Script model: Markdown + directive parser, stable cue IDs, and a round-trip-safe writer that leaves untouched text byte-for-byte identical."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+spearfia-core.workspace = true

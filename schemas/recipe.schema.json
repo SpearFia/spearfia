@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/recipe/v1.json",
+  "title": "Spear Fia recipe (a multi-step look built from capabilities)",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "steps"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Analysis kind the whole recipe needs"
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "use"
+        ],
+        "properties": {
+          "use": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?)?#[a-z0-9][a-z0-9.-]*$",
+            "description": "<asset>#<capability>, e.g. spearfia/focus-loupe#pip.face-circle"
+          },
+          "target": {
+            "type": "string",
+            "description": "Which input/track the step applies to"
+          },
+          "with": {
+            "type": "object",
+            "description": "Input values for the capability"
+          }
+        },
+        "additionalProperties": true
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": true
+}

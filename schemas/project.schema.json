@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/project/v1.json",
+  "title": "Spear Fia project",
+  "type": "object",
+  "required": [
+    "name",
+    "spec_version",
+    "adapter"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "spec_version": {
+      "const": 1
+    },
+    "adapter": {
+      "enum": [
+        "filmcraft",
+        "resolve"
+      ]
+    },
+    "library_roots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Absolute or project-relative folder searched for assets and media"
+      }
+    },
+    "script": {
+      "type": "string",
+      "description": "Default: script/script.md"
+    },
+    "vision": {
+      "type": "string",
+      "description": "Default: vision.yaml"
+    },
+    "settings": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "timebase": {
+          "type": "object",
+          "required": [
+            "num",
+            "den"
+          ],
+          "properties": {
+            "num": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "den": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": true,
+          "description": "Rational frame rate, e.g. 60000/1001 for 59.94 fps"
+        },
+        "resolution": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "sample_rate": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "TODO: adapter-specific settings block."
+}

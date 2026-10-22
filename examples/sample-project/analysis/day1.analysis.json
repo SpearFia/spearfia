@@ -1,0 +1,16 @@
+{
+  "$schema": "https://spearfia.dev/schemas/analysis/v1.json",
+  "source": { "path": "footage/day1.mp4", "hash": "sha256:469f41d96a9726fed0d5f7a4cc570407f19f446fd11ba34235a0ace91bc1d0fa" },
+  "analyzer": { "name": "spearfia-analysis", "version": "0.1.0" },
+  "timebase": { "num": 60000, "den": 1001 },
+  "duration_frames": 7200,
+  "transcript": [
+    { "id": "tr1", "start_frame": 4316, "end_frame": 4436, "text": "Okay, here goes nothing.", "speaker": "host" }
+  ],
+  "sections": [{ "id": "sec1", "start_frame": 4316, "end_frame": 4796, "label": "attempt" }],
+  "beats": [{ "id": "b1", "frame": 4400, "strength": 0.9 }],
+  "shots": [{ "id": "sh1", "start_frame": 0, "end_frame": 7200 }],
+  "moments": [{ "id": "mo1", "start_frame": 4700, "end_frame": 4790, "kind": "crash", "confidence": 0.82 }],
+  "energy": { "hop_frames": 30, "values": [0.2, 0.4, 0.9] },
+  "face_track": [{ "frame": 4316, "center": [0.31, 0.42], "radius": 0.12 }]
+}

@@ -1,0 +1,64 @@
+# Architecture
+
+A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
+
+## One command layer
+
+The UI, the CLI, the MCP server and the local API all call the same typed operations in
+`spearfia-core`. Because AI actions and human actions go through one layer, they share one
+undo history: you can undo what the AI did the same way you undo your own edit.
+
+## Intent here, realization in the editor
+
+Spear Fia owns the intent: the script, its cues, the vision and the links between script
+and footage. The editor (FilmCraft first) owns the realization: exact timing and the
+finished timeline.
+
+## Two-way FilmCraft sync
+
+Every script cue has a stable ID (`{#m12}`), stored in the editor's timeline item metadata.
+
+- **Push** compiles a timeline plan (`timeline-plan` schema) and applies it to the editor
+  in one transaction.
+- **Pull** maps editor changes back to the script by ID. A three-way merge against the
+  last-synced snapshot resolves conflicts.
+- Cues keep the timing the script asked for (intent) separate from the timing the editor
+  actually has (actual).
+
+Lives in `spearfia-sync` and `spearfia-adapter-filmcraft`.
+
+## Per-project vision
+
+A vision is layered: app defaults → preset → the project's `vision.yaml` → a section's
+`:vision{}` override. Its weights bias catalog search and the AI's choices. Lives in
+`spearfia-vision`.
+
+## AI-friendly metadata
+
+- Analysis sidecars hold transcripts, beats, shots, energy and events (`analysis` schema).
+- Time is frames plus a rational timebase, and everything has an ID.
+- Each sidecar records the analyzer and version that produced it, so it can be regenerated.
+
+Lives in `spearfia-analysis`.
+
+## Plugins expose capabilities
+
+- An asset's capabilities have typed inputs, a `requires` list of the analysis they need,
+  and `binds` that connect parameters to analysis data (for example a face-following
+  loupe binds `center` to `face_track.center`).
+- Recipes compose capabilities into looks.
+- All of it is exposed as MCP tools with progressive disclosure, so the AI calls
+  `apply_look("facecam-pip")` instead of rebuilding masks by hand.
+
+Lives in `spearfia-catalog` and `spearfia-mcp`; descriptors live in `spearfia/plugins`.
+
+## Pluggable catalog sources
+
+Local folders now; a Git-based community registry and third-party APIs later. Every asset
+has a namespaced ID (`spearfia/<asset>@<semver>`), a required license, a source and a hash.
+
+## Text-editable script
+
+The script is a plain `script.md` (see `spearfia-spec/docs/script-directives.md`). Spear Fia
+watches it for external edits and writes it back round-trip safe: text it did not change
+stays byte-for-byte the same. Lives in `spearfia-script`.

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/vision/v1.json",
+  "title": "Spear Fia vision (preset or project vision)",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "extends": {
+      "type": "string",
+      "description": "Preset this builds on. Layering: app defaults → preset → project vision.yaml → section :vision{}"
+    },
+    "goal": {
+      "type": "string",
+      "description": "What the video must achieve for the viewer"
+    },
+    "pacing": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "avg_shot_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "max_silence_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cut_style": {
+          "enum": [
+            "jump",
+            "invisible",
+            "rhythmic",
+            "mixed"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "script_rules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Plain-language rule for writing or editing the script"
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": -1,
+        "maximum": 1
+      },
+      "description": "Tag → bias for catalog search and AI choices (-1 avoid … 1 prefer)"
+    },
+    "avoid": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "TODO: per-section overrides schema for :vision{}."
+}

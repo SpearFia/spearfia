@@ -1,0 +1,14 @@
+{
+  "$schema": "https://spearfia.dev/schemas/project/v1.json",
+  "name": "Sample Project",
+  "spec_version": 1,
+  "adapter": "filmcraft",
+  "library_roots": ["E:/SpearFiaLibrary", "./footage"],
+  "script": "script/script.md",
+  "vision": "vision.yaml",
+  "settings": {
+    "timebase": { "num": 60000, "den": 1001 },
+    "resolution": [1080, 1920],
+    "sample_rate": 48000
+  }
+}

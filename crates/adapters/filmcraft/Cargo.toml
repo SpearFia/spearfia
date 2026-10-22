@@ -1,0 +1,11 @@
+[package]
+name = "spearfia-adapter-filmcraft"
+description = "FilmCraft adapter (first-class): applies timeline plans through FilmCraft's MCP/control channel and reads editor state back."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+spearfia-core.workspace = true
