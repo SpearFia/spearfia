@@ -364,9 +364,7 @@ pub fn create_project(spec: &NewProject) -> Result<Project> {
     }
     let script_text = match &spec.script {
         ScriptStart::Sections => starter_script(name, spec.format),
-        ScriptStart::Import(path) => {
-            fs::read_to_string(path).map_err(|e| CoreError::io(path, e))?
-        }
+        ScriptStart::Import(path) => imported_script(path, name, spec.format)?,
     };
 
     for dir in ["script", "analysis", "sync", "cache", "exports"] {
@@ -408,6 +406,39 @@ pub fn create_project(spec: &NewProject) -> Result<Project> {
     write_text(&project.root.join(".gitignore"), "cache/\nexports/\n")?;
     project.save()?;
     Ok(project)
+}
+
+/// The script from an imported `.md`, `.txt` or `.docx`, with front matter added when it
+/// has none. What a `.docx` couldn't carry over is noted at the top.
+fn imported_script(path: &Path, title: &str, format: Format) -> Result<String> {
+    let is_docx = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("docx"));
+    let body = if is_docx {
+        let c = crate::docx::import(path)?;
+        let file = path
+            .file_name()
+            .map_or_else(Default::default, |n| n.to_string_lossy());
+        if c.skipped.is_empty() {
+            c.markdown
+        } else {
+            format!(
+                "> Imported from {file}. Left out: {}.\n\n{}",
+                c.skipped.join(", "),
+                c.markdown
+            )
+        }
+    } else {
+        fs::read_to_string(path).map_err(|e| CoreError::io(path, e))?
+    };
+    if body.starts_with("---\n") || body.starts_with("---\r\n") {
+        return Ok(body);
+    }
+    Ok(format!(
+        "---\ntitle: {}\nformat: {}\nvision: ../vision.yaml\n---\n\n{body}",
+        yaml_str(title),
+        format.script_value()
+    ))
 }
 
 fn starter_script(title: &str, format: Format) -> String {
@@ -531,6 +562,25 @@ mod tests {
             .map(|e| e.unwrap().file_name())
             .collect();
         assert_eq!(names, ["script.md"]);
+    }
+
+    #[test]
+    fn imports_get_front_matter_once() {
+        let dir = temp_dir("import");
+        let txt = dir.join("draft.txt");
+        fs::write(&txt, "## Hook\nNever drifted.\n").unwrap();
+        let out = imported_script(&txt, "Ep: 2", Format::Short).unwrap();
+        assert!(
+            out.starts_with("---\ntitle: \"Ep: 2\"\nformat: short\n"),
+            "{out}"
+        );
+        assert!(out.ends_with("## Hook\nNever drifted.\n"));
+        let md = dir.join("s.md");
+        fs::write(&md, "---\ntitle: Mine\n---\nx\n").unwrap();
+        assert_eq!(
+            imported_script(&md, "Other", Format::Short).unwrap(),
+            "---\ntitle: Mine\n---\nx\n"
+        );
     }
 
     #[test]

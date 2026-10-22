@@ -1,4 +1,5 @@
-//! New Project: basics, vision, script start, media folders, FilmCraft. Shows what will
+//! New Project: basics, vision, script start, media folders, FilmCraft, as steps that open
+//! one after another (any step can be opened at any time). Shows what will
 //! be created, then calls `spearfia_core::project::create_project`.
 
 use crate::app::{App, View};
@@ -46,7 +47,16 @@ pub struct NewProjectForm {
     conn: Conn,
     port: u16,
     error: Option<String>,
+    /// Which of the five steps are expanded. Only Basics starts open; Continue opens the
+    /// next one, and any header can be clicked open at any time.
+    open: [bool; STEPS],
+    /// Steps the user has finished with Continue.
+    done: [bool; STEPS],
+    /// Scroll this step into view on the next frame (after Continue opens it).
+    scroll_to: Option<usize>,
 }
+
+const STEPS: usize = 5;
 
 impl NewProjectForm {
     pub fn new(projects_dir: Option<PathBuf>, series: Option<String>) -> Self {
@@ -77,6 +87,9 @@ impl NewProjectForm {
             conn: Conn::Bridge,
             port: 9876,
             error: None,
+            open: [true, false, false, false, false],
+            done: [false; STEPS],
+            scroll_to: None,
         }
     }
 
@@ -210,16 +223,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
-                    ui.columns(2, |cols| {
-                        basics(form, &mut cols[0]);
-                        cols[0].add_space(14.0);
-                        vision(form, &mut cols[0]);
-                        cols[0].add_space(14.0);
-                        script(form, &mut cols[0]);
-                        media(form, &mut cols[1]);
-                        cols[1].add_space(14.0);
-                        filmcraft(form, &mut cols[1], app.filmcraft.is_some());
-                    });
+                    // One column, top to bottom: each step opens below the one before.
+                    ui.set_max_width(760.0);
+                    basics(form, ui);
+                    ui.add_space(12.0);
+                    vision(form, ui);
+                    ui.add_space(12.0);
+                    script(form, ui);
+                    ui.add_space(12.0);
+                    media(form, ui);
+                    ui.add_space(12.0);
+                    filmcraft(form, ui, app.filmcraft.is_some());
                 });
         });
 
@@ -247,16 +261,85 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
-fn section(ui: &mut egui::Ui, n: u8, title: &str, add: impl FnOnce(&mut egui::Ui)) {
-    card(theme::BG_PANEL, theme::BORDER).show(ui, |ui| {
+/// One step of the form: a header that expands or collapses it (showing a one-line summary
+/// when collapsed), the step's fields, and Continue, which is enabled once `ready` is `Ok`
+/// and opens the next step. Any step can be opened by its header, ready or not.
+fn step(
+    ui: &mut egui::Ui,
+    f: &mut NewProjectForm,
+    i: usize,
+    title: &str,
+    summary: String,
+    ready: Result<(), &str>,
+    body: impl FnOnce(&mut NewProjectForm, &mut egui::Ui),
+) {
+    let open = f.open[i];
+    let finished = f.done[i] && ready.is_ok();
+    let border = if open {
+        theme::BORDER_STRONG
+    } else {
+        theme::BORDER
+    };
+    let r = card(theme::BG_PANEL, border).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            widgets::tag(ui, &n.to_string(), theme::TEXT);
-            ui.label(strong(title, 13.5));
-        });
+        let head = ui
+            .horizontal(|ui| {
+                widgets::tag(
+                    ui,
+                    &(i + 1).to_string(),
+                    if finished { theme::OK } else { theme::TEXT },
+                );
+                ui.label(strong(title, 13.5));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let mut glyph = |icon, color| {
+                        let (r, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        crate::icons::paint(ui.painter(), r, icon, color);
+                    };
+                    if !open {
+                        glyph(crate::icons::Icon::Down, theme::TEXT_MUTED);
+                    }
+                    if finished {
+                        glyph(crate::icons::Icon::Check, theme::OK);
+                    }
+                    if !open {
+                        ui.add(egui::Label::new(muted(summary)).truncate());
+                    }
+                });
+            })
+            .response
+            .interact(egui::Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if head.clicked() {
+            f.open[i] = !open;
+        }
+        if !open {
+            return;
+        }
         ui.add_space(8.0);
-        add(ui);
+        body(f, ui);
+        if i + 1 < STEPS {
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                let go = ui
+                    .add_enabled_ui(ready.is_ok(), |ui| widgets::primary_button(ui, "Continue"))
+                    .inner;
+                if let Err(why) = ready {
+                    ui.label(muted(why));
+                }
+                if go.clicked() {
+                    f.done[i] = true;
+                    f.open[i] = false;
+                    f.open[i + 1] = true;
+                    f.scroll_to = Some(i + 1);
+                }
+            });
+        }
     });
+    if f.scroll_to == Some(i) {
+        r.response.scroll_to_me(Some(Align::TOP));
+        f.scroll_to = None;
+    }
 }
 
 fn field_label(ui: &mut egui::Ui, s: &str) {
@@ -264,7 +347,26 @@ fn field_label(ui: &mut egui::Ui, s: &str) {
 }
 
 fn basics(f: &mut NewProjectForm, ui: &mut egui::Ui) {
-    section(ui, 1, "Basics", |ui| {
+    let summary = format!(
+        "{} · {} · {}×{} · {}",
+        if f.name.trim().is_empty() {
+            "Untitled"
+        } else {
+            f.name.trim()
+        },
+        f.format.label(),
+        f.resolution[0],
+        f.resolution[1],
+        f.timebase.label()
+    );
+    let ready = if f.name.trim().is_empty() {
+        Err("Add a project name to continue.")
+    } else if f.root().as_os_str().is_empty() {
+        Err("Choose a projects folder to continue.")
+    } else {
+        Ok(())
+    };
+    step(ui, f, 0, "Basics", summary, ready, |f, ui| {
         field_label(ui, "Project name");
         if ui
             .add(
@@ -314,11 +416,41 @@ fn basics(f: &mut NewProjectForm, ui: &mut egui::Ui) {
                 ui.add(egui::TextEdit::singleline(&mut f.runtime).desired_width(70.0));
             });
         });
+        field_label(ui, "Projects folder");
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut f.parent)
+                    .hint_text(r"E:\Media\Learning to Drift")
+                    .desired_width(ui.available_width() - 80.0),
+            );
+            if widgets::button(ui, "Browse").clicked()
+                && let Some(p) = rfd::FileDialog::new().pick_folder()
+            {
+                f.parent = p.display().to_string();
+                f.root_override = None;
+            }
+        });
+        let root = f.root();
+        ui.horizontal(|ui| {
+            ui.label(muted("Project folder:"));
+            let shown = if root.as_os_str().is_empty() {
+                "not set".to_owned()
+            } else {
+                root.display().to_string()
+            };
+            ui.add(egui::Label::new(mono(shown.clone(), theme::TEXT_2)).truncate())
+                .on_hover_text(shown);
+        });
     });
 }
 
 fn vision(f: &mut NewProjectForm, ui: &mut egui::Ui) {
-    section(ui, 2, "Vision", |ui| {
+    let preset = f
+        .preset
+        .and_then(spearfia_vision::preset)
+        .map_or("No preset", |p| p.title);
+    let summary = format!("{preset} · {:.1}s shots · {} cuts", f.avg_shot, f.cut_style);
+    step(ui, f, 1, "Vision", summary, Ok(()), |f, ui| {
         ui.label(muted(
             "Steers the AI's script notes, catalog ranking and pacing. Pick a preset, then adjust.",
         ));
@@ -392,13 +524,27 @@ fn vision(f: &mut NewProjectForm, ui: &mut egui::Ui) {
 }
 
 fn script(f: &mut NewProjectForm, ui: &mut egui::Ui) {
-    section(ui, 3, "Script", |ui| {
+    let import = f.script_mode == ScriptMode::Import;
+    let file = std::path::Path::new(f.import_path.trim())
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned());
+    let summary = match (import, &file) {
+        (true, Some(n)) => format!("Import {n}"),
+        (true, None) => "Import a file".into(),
+        (false, _) => "Blank with sections".into(),
+    };
+    let ready = if import && file.is_none() {
+        Err("Choose the file to import, or start blank.")
+    } else {
+        Ok(())
+    };
+    step(ui, f, 2, "Script", summary, ready, |f, ui| {
         widgets::segmented(
             ui,
             &mut f.script_mode,
             &[
                 (ScriptMode::Sections, "Blank with sections"),
-                (ScriptMode::Import, "Import .md / .txt"),
+                (ScriptMode::Import, "Import .docx / .md / .txt"),
             ],
         );
         if f.script_mode == ScriptMode::Import {
@@ -409,47 +555,24 @@ fn script(f: &mut NewProjectForm, ui: &mut egui::Ui) {
                 );
                 if widgets::button(ui, "Browse").clicked()
                     && let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Script", &["md", "markdown", "txt"])
+                        .add_filter("Script", &["docx", "md", "markdown", "txt"])
                         .pick_file()
                 {
                     f.import_path = p.display().to_string();
                 }
             });
             ui.label(muted(
-                "Google Docs and .docx import come later. Export as Markdown for now.",
+                "Word headings become sections; bold, italic, lists and tables carry over. \
+                 From Google Docs: File → Download → Microsoft Word (.docx).",
             ));
         }
     });
 }
 
 fn media(f: &mut NewProjectForm, ui: &mut egui::Ui) {
-    section(ui, 4, "Media folders", |ui| {
-        field_label(ui, "Projects folder");
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut f.parent)
-                    .hint_text(r"E:\Media\Learning to Drift")
-                    .desired_width(ui.available_width() - 80.0),
-            );
-            if widgets::button(ui, "Browse").clicked()
-                && let Some(p) = rfd::FileDialog::new().pick_folder()
-            {
-                f.parent = p.display().to_string();
-                f.root_override = None;
-            }
-        });
-        let root = f.root();
-        ui.horizontal(|ui| {
-            ui.label(muted("Project folder:"));
-            let shown = if root.as_os_str().is_empty() {
-                "not set".to_owned()
-            } else {
-                root.display().to_string()
-            };
-            ui.add(egui::Label::new(mono(shown.clone(), theme::TEXT_2)).truncate())
-                .on_hover_text(shown);
-        });
-        ui.add_space(6.0);
+    let on = f.folders.iter().filter(|(_, on)| *on).count();
+    let summary = format!("{on} subfolder{}", if on == 1 { "" } else { "s" });
+    step(ui, f, 3, "Media folders", summary, Ok(()), |f, ui| {
         field_label(ui, "Subfolders (each has a role; subfolders inherit it)");
         egui::Frame::new()
             .fill(theme::BG_INSET)
@@ -471,7 +594,12 @@ fn media(f: &mut NewProjectForm, ui: &mut egui::Ui) {
 }
 
 fn filmcraft(f: &mut NewProjectForm, ui: &mut egui::Ui, found: bool) {
-    section(ui, 5, "FilmCraft", |ui| {
+    let summary = match (f.filmcraft, f.conn) {
+        (false, _) => "Not paired".to_owned(),
+        (true, Conn::Bridge) => format!("Paired · bridge on port {}", f.port),
+        (true, Conn::Headless) => "Paired · headless".to_owned(),
+    };
+    step(ui, f, 4, "FilmCraft", summary, Ok(()), |f, ui| {
         ui.checkbox(
             &mut f.filmcraft,
             "Pair this project with a FilmCraft project",
