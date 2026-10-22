@@ -11,6 +11,7 @@ members = [
   "crates/sync",
   "crates/ai",
   "crates/mcp",
+  "crates/ops",
   "crates/adapters/*",
 ]
 
@@ -34,6 +35,7 @@ spearfia-analysis = { path = "crates/analysis" }
 spearfia-sync = { path = "crates/sync" }
 spearfia-ai = { path = "crates/ai" }
 spearfia-mcp = { path = "crates/mcp" }
+spearfia-ops = { path = "crates/ops" }
 spearfia-adapter-filmcraft = { path = "crates/adapters/filmcraft" }
 
 [profile.release]
