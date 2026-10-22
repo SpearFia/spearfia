@@ -1,7 +1,19 @@
 //! `spearfia-core`: command layer, undo history and project model. Every UI, CLI, MCP and API
 //! action is a typed command here, so AI and human edits share one undo history.
 //!
-//! Skeleton only: so far it holds the shared `AssetId` type.
+//! So far: the shared `AssetId` type, the project model (create, open, save) and per-user
+//! app state (recent projects, catalog sources). The undo history comes with the first
+//! editing commands.
+
+pub mod app_state;
+pub mod comments;
+pub mod error;
+pub mod links;
+pub mod media;
+pub mod project;
+pub mod tabs;
+
+pub use error::CoreError;
 
 use std::fmt;
 use std::str::FromStr;
@@ -69,5 +81,22 @@ mod tests {
         for bad in ["focus-loupe@0.1.0", "spearfia/focus-loupe", "/x@1", "a/@1"] {
             assert!(bad.parse::<AssetId>().is_err(), "{bad}");
         }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod testutil {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A fresh, empty folder under the system temp dir for one test.
+    pub fn temp_dir(label: &str) -> PathBuf {
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("spearfia-core-{label}-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 }

@@ -15,4 +15,11 @@ path = "src/main.rs"
 [dependencies]
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11"] }
 egui.workspace = true
+rfd = "0.17"
+serde_json.workspace = true
+skrifa = "0.44"
+spearfia-adapter-filmcraft.workspace = true
+spearfia-catalog.workspace = true
 spearfia-core.workspace = true
+spearfia-script.workspace = true
+spearfia-vision.workspace = true

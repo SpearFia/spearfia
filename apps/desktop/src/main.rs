@@ -1,41 +1,45 @@
 //! `spearfia-desktop`: the Spear Fia desktop app. Native Rust UI with egui, the same
-//! toolkit FilmCraft uses. All user actions will go through `spearfia-core`'s command layer.
+//! toolkit FilmCraft uses. Project changes go through `spearfia-core`.
 
 // No console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use eframe::egui;
+mod app;
+mod doc;
+mod fonts;
+mod icons;
+mod screens;
+mod script_view;
+mod theme;
+mod widgets;
+
+use std::path::Path;
 
 const APP_NAME: &str = "Spear Fia";
-const TAGLINE: &str = "The start of something great";
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(APP_NAME)
-            .with_inner_size([960.0, 600.0])
-            .with_min_inner_size([480.0, 320.0]),
+            .with_inner_size([1600.0, 1000.0])
+            .with_min_inner_size([1100.0, 700.0]),
         ..Default::default()
     };
-    eframe::run_native(APP_NAME, options, Box::new(|_cc| Ok(Box::new(SpearFiaApp))))
+    eframe::run_native(
+        APP_NAME,
+        options,
+        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+    )
 }
 
-struct SpearFiaApp;
-
-impl eframe::App for SpearFiaApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.centered_and_justified(|ui| {
-                ui.heading(egui::RichText::new(TAGLINE).size(40.0).strong());
-            });
-        });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn tagline_is_set() {
-        assert_eq!(super::TAGLINE, "The start of something great");
-    }
+/// Open a folder in the system file manager.
+pub fn reveal(dir: &Path) {
+    let cmd = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(cmd).arg(dir).spawn();
 }
