@@ -2800,40 +2800,12 @@ impl ScriptStage {
             .unwrap_or(doc::HAlign::Left)
     }
 
-    /// The selection as words of one script line, for linking a clip.
+    /// The main document's selection, including any intervening lines and sections.
     fn selection_words(&self) -> Option<Selection> {
-        let b = &self.main;
         if self.side.is_some() {
             return None;
         }
-        let line = format::line_of(&b.source, self.sel.start);
-        let block = b
-            .parsed
-            .blocks
-            .iter()
-            .position(|blk| matches!(blk, Block::Line { line: l, .. } if *l == line))?;
-        let words = format::word_ranges(&b.source, &b.parsed, block);
-        if words.is_empty() {
-            return None;
-        }
-        let (s, e) = if self.sel.is_empty() {
-            (0, words.len() - 1)
-        } else {
-            let first = words
-                .iter()
-                .position(|w| w.end > self.sel.start)
-                .unwrap_or(0);
-            let last = words
-                .iter()
-                .rposition(|w| w.start < self.sel.end)
-                .unwrap_or(words.len() - 1);
-            (first, last.max(first))
-        };
-        Some(Selection {
-            block,
-            first: s,
-            last: e,
-        })
+        Selection::from_source(&self.main.source, &self.main.parsed, self.sel.clone())
     }
 
     fn apply_slash(&mut self, i: usize, now: f64) {

@@ -14,7 +14,9 @@ pub struct CatalogView {
     pub search: String,
     pub open_only: bool,
     /// Rank by this preset's weights.
-    pub vision: Option<&'static str>,
+    pub vision: Option<String>,
+    pub show_visions: bool,
+    pub visions: super::vision_catalog::VisionView,
     /// Asset id of the selected entry.
     pub selected: Option<String>,
     pub show_json: bool,
@@ -44,6 +46,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .exact_size(250.0)
         .frame(panel(theme::BG_PANEL).inner_margin(Margin::symmetric(10, 14)))
         .show(ui, |ui| sidebar(app, ui));
+    if app.catalog_view.show_visions {
+        Panel::right("vision-inspector")
+            .exact_size(440.0)
+            .frame(panel(theme::BG_PANEL).inner_margin(Margin::same(16)))
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("vision-inspector-scroll")
+                    .show(ui, |ui| super::vision_catalog::inspector(app, ui));
+            });
+        egui::CentralPanel::default()
+            .frame(panel(theme::BG_APP).inner_margin(Margin::symmetric(20, 16)))
+            .show(ui, |ui| super::vision_catalog::list(app, ui));
+        return;
+    }
     Panel::right("catalog-inspector")
         .exact_size(370.0)
         .frame(panel(theme::BG_PANEL).inner_margin(Margin::same(16)))
@@ -66,8 +82,14 @@ fn section_label(ui: &mut egui::Ui, s: &str) {
 fn sidebar(app: &mut App, ui: &mut egui::Ui) {
     section_label(ui, "KIND");
     let total = app.catalog.entries.len();
-    let mut pick = |ui: &mut egui::Ui, kind: Option<AssetKind>, label: &str, n: usize, color| {
-        let on = app.catalog_view.kind == kind;
+    let mut pick = |ui: &mut egui::Ui,
+                    kind: Option<AssetKind>,
+                    label: &str,
+                    n: usize,
+                    color,
+                    vision_page: bool| {
+        let on = app.catalog_view.show_visions == vision_page
+            && (vision_page || app.catalog_view.kind == kind);
         let r = ui
             .horizontal(|ui| {
                 let (dot, _) = ui.allocate_exact_size(egui::vec2(10.0, 16.0), Sense::hover());
@@ -89,9 +111,10 @@ fn sidebar(app: &mut App, ui: &mut egui::Ui) {
         }
         if r.clicked() {
             app.catalog_view.kind = kind;
+            app.catalog_view.show_visions = vision_page;
         }
     };
-    pick(ui, None, "All assets", total, theme::TEXT_MUTED);
+    pick(ui, None, "All assets", total, theme::TEXT_MUTED, false);
     for k in AssetKind::ALL {
         let n = app.catalog.count(k);
         if n > 0
@@ -104,9 +127,18 @@ fn sidebar(app: &mut App, ui: &mut egui::Ui) {
                     | AssetKind::Template
             )
         {
-            pick(ui, Some(k), k.label(), n, kind_color(k));
+            pick(ui, Some(k), k.label(), n, kind_color(k), false);
         }
     }
+
+    pick(
+        ui,
+        None,
+        "Vision",
+        app.visions.len(),
+        theme::CUE_VISION,
+        true,
+    );
 
     section_label(ui, "SOURCES");
     let mut changed = false;
@@ -195,7 +227,8 @@ fn current_query(app: &App) -> Query {
         weights: app
             .catalog_view
             .vision
-            .and_then(spearfia_vision::preset)
+            .as_deref()
+            .and_then(|name| app.visions.iter().find(|v| v.name() == name))
             .map(|p| p.weight_map())
             .unwrap_or_default(),
     }
@@ -221,13 +254,17 @@ fn list(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.checkbox(&mut app.catalog_view.open_only, "Open licenses only");
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let label = app.catalog_view.vision.unwrap_or("none");
+            let label = app.catalog_view.vision.as_deref().unwrap_or("none");
             egui::ComboBox::from_id_salt("rank-vision")
                 .selected_text(label)
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut app.catalog_view.vision, None, "none");
-                    for p in spearfia_vision::builtin_presets() {
-                        ui.selectable_value(&mut app.catalog_view.vision, Some(p.name), p.title);
+                    for p in &app.visions {
+                        ui.selectable_value(
+                            &mut app.catalog_view.vision,
+                            Some(p.name().to_owned()),
+                            p.title(),
+                        );
                     }
                 });
             ui.label(muted("rank by vision"));
@@ -438,10 +475,10 @@ fn inspector(app: &mut App, ui: &mut egui::Ui) {
     }
 
     heading(ui, "VISION FIT");
-    for p in spearfia_vision::builtin_presets() {
+    for p in &app.visions {
         let fit = a.fit(&p.weight_map());
         ui.horizontal(|ui| {
-            ui.label(text(p.title, 12.0, theme::TEXT_2));
+            ui.label(text(p.title(), 12.0, theme::TEXT_2));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.label(mono(
                     format!("{fit:+.1}"),

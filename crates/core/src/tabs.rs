@@ -113,6 +113,7 @@ mod tests {
             timebase: Timebase::FPS_60,
             target_runtime_seconds: None,
             vision: NewVision {
+                template: None,
                 extends: None,
                 goal: String::new(),
                 avg_shot_seconds: None,

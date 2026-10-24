@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 
 pub const LINKS_FILE: &str = "links.json";
+pub const MAX_BATCH_LINKS: usize = 10_000;
+pub const MAX_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
 /// Whether the media supplies picture or sound for the words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +134,54 @@ impl Links {
         let id = link.id.clone();
         self.links.push(link);
         id
+    }
+
+    /// Add several clip/line anchors as one save. A failed save leaves memory unchanged.
+    pub fn add_batch(&mut self, project: &Project, requests: Vec<Link>) -> Result<Vec<String>> {
+        if requests.len() > MAX_BATCH_LINKS {
+            return Err(CoreError::Invalid(
+                "Link at most 10,000 clip/line pairs at a time.".into(),
+            ));
+        }
+        let bytes = requests.iter().try_fold(0usize, |sum, l| {
+            sum.checked_add(l.quote.len())?
+                .checked_add(l.media.path.len())
+        });
+        if !bytes.is_some_and(|bytes| bytes <= MAX_BATCH_BYTES) {
+            return Err(CoreError::Invalid(
+                "The media link selection is too large. Link smaller groups of lines or clips."
+                    .into(),
+            ));
+        }
+        let mut updated = self.clone();
+        let mut ids = Vec::new();
+        for request in requests {
+            if let Some(existing) = updated.links.iter().find(|l| {
+                l.quote == request.quote
+                    && l.line == request.line
+                    && l.media.path == request.media.path
+                    && l.role == request.role
+                    && l.kind == request.kind
+            }) {
+                ids.push(existing.id.clone());
+                continue;
+            }
+            let largest = updated
+                .links
+                .iter()
+                .filter_map(|l| l.id.strip_prefix('k')?.parse::<u32>().ok())
+                .max()
+                .unwrap_or(0);
+            if largest == u32::MAX {
+                return Err(CoreError::Invalid(
+                    "No media link IDs remain. The links were not changed.".into(),
+                ));
+            }
+            ids.push(updated.add(request));
+        }
+        updated.save(project)?;
+        *self = updated;
+        Ok(ids)
     }
 
     pub fn remove(&mut self, id: &str) -> Option<Link> {
@@ -318,5 +368,54 @@ mod tests {
         fresh.add(sample());
         assert!(fresh.save(&p).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), "{ \"links\": [ broken");
+    }
+    #[test]
+    fn batch_links_keep_multiple_clips_and_duplicate_saves_are_idempotent() {
+        let project = project();
+        let mut links = Links::default();
+        let mut first = sample();
+        first.quote = "one two".into();
+        let mut second = first.clone();
+        second.media.path = "b.mp4".into();
+        let mut third = second.clone();
+        third.line = 4;
+        third.quote = "three four".into();
+        let requests = vec![first, second, third];
+        let ids = links.add_batch(&project, requests.clone()).unwrap();
+        assert_eq!(ids.len(), 3);
+        assert_eq!(Links::load(&project).unwrap().links, links.links);
+        assert_eq!(links.add_batch(&project, requests).unwrap(), ids);
+        assert_eq!(links.links.len(), 3);
+    }
+
+    #[test]
+    fn failed_batch_preserves_memory_and_disk() {
+        let project = project();
+        let mut links = Links::default();
+        links.add(sample());
+        let before = links.clone();
+        fs::write(project.root.join(LINKS_FILE), "{broken").unwrap();
+        let mut extra = sample();
+        extra.media.path = "b.mp4".into();
+        assert!(links.add_batch(&project, vec![extra]).is_err());
+        assert_eq!(links, before);
+        assert_eq!(
+            fs::read_to_string(project.root.join(LINKS_FILE)).unwrap(),
+            "{broken"
+        );
+    }
+
+    #[test]
+    fn exhausted_batch_ids_report_an_error() {
+        let project = project();
+        let mut links = Links::default();
+        let mut old = sample();
+        old.id = format!("k{}", u32::MAX);
+        links.links.push(old);
+        let before = links.clone();
+        let mut extra = sample();
+        extra.media.path = "b.mp4".into();
+        assert!(links.add_batch(&project, vec![extra]).is_err());
+        assert_eq!(links, before);
     }
 }

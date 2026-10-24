@@ -6,6 +6,29 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Media folders
+
+- Copy files from Explorer into a highlighted media folder. Create folders, drag files
+  and folders into the hierarchy, or move folders to the project root. Moves preserve
+  script links and folder roles; imports keep originals and never overwrite existing files.
+
+### Media linking
+
+- Select across script lines and blank breaks, or click/drop onto a section heading.
+  Link checked clips together or keep adding clips to the held selection. Overlapping
+  links have a more transparent highlight. Hover linked words for a second to see clip
+  names and reveal/highlight their files in the media sidebar. Multi-line linking saves
+  all anchors together and keeps the existing links.json format.
+
+
+### Vision catalog
+
+- Catalog → Kind → Vision shows built-in and custom creative briefs. Copy an AI prompt
+  to turn channel-analysis notes and your requirements into validated vision JSON, then
+  paste or import it. Saved templates are available in New Project and catalog ranking;
+  projects embed their rules, references, pacing and weights for portability.
+
+
 ### Added
 
 - Initial repository scaffold.
