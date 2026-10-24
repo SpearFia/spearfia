@@ -293,10 +293,15 @@ impl Project {
         write_text(&path, text)
     }
 
-    /// The `extends:` preset named in `vision.yaml`, if any. A full YAML reader lives in
-    /// `spearfia-vision` later; this only reads the one line the UI shows.
+    /// The template named in a JSON or simple YAML project vision.
     pub fn vision_preset(&self) -> Option<String> {
         let text = fs::read_to_string(self.vision_path()).ok()?;
+        if let Ok(document) = serde_json::from_str::<serde_json::Value>(&text) {
+            return document
+                .get("extends")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+        }
         text.lines()
             .find_map(|l| l.strip_prefix("extends:"))
             .map(|v| v.trim().trim_matches('"').to_owned())
@@ -334,6 +339,8 @@ pub struct NewProject {
 /// The project vision written to `vision.yaml`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewVision {
+    /// Complete template embedded in the project so custom visions are portable.
+    pub template: Option<serde_json::Value>,
     /// Preset name, e.g. `chaotic-gaming-comedy`.
     pub extends: Option<String>,
     pub goal: String,
@@ -349,6 +356,7 @@ pub struct NewVision {
 /// folders. Refuses to touch a folder that already holds a project.
 pub fn create_project(spec: &NewProject) -> Result<Project> {
     let name = spec.name.trim();
+    let vision_source = vision_yaml(name, &spec.vision)?;
     if name.is_empty() {
         return Err(CoreError::Invalid("The project needs a name.".into()));
     }
@@ -400,7 +408,7 @@ pub fn create_project(spec: &NewProject) -> Result<Project> {
     };
     let project = Project { root, file };
 
-    write_text(&project.vision_path(), &vision_yaml(name, &spec.vision))?;
+    write_text(&project.vision_path(), &vision_source)?;
     project.write_script(&script_text)?;
     write_text(&project.root.join("links.json"), "{\n  \"links\": []\n}\n")?;
     write_text(&project.root.join(".gitignore"), "cache/\nexports/\n")?;
@@ -448,7 +456,41 @@ fn starter_script(title: &str, format: Format) -> String {
     )
 }
 
-fn vision_yaml(name: &str, v: &NewVision) -> String {
+fn vision_yaml(name: &str, v: &NewVision) -> Result<String> {
+    if let Some(document) = &v.template {
+        let source =
+            serde_json::to_string(document).map_err(|e| CoreError::Invalid(e.to_string()))?;
+        let template = crate::visions::Vision::parse(&source)?;
+        let mut document = template.document;
+        document["name"] = slug(name).into();
+        if let Some(extends) = &v.extends {
+            document["extends"] = extends.clone().into();
+        }
+        if !v.goal.trim().is_empty() {
+            document["goal"] = v.goal.trim().into();
+        }
+        if v.avg_shot_seconds.is_some() || v.cut_style.is_some() {
+            if document.get("pacing").is_none() {
+                document["pacing"] = serde_json::json!({});
+            }
+            if let Some(seconds) = v.avg_shot_seconds {
+                if !seconds.is_finite() || seconds <= 0.0 {
+                    return Err(CoreError::Invalid(
+                        "Average shot length must be positive and finite.".into(),
+                    ));
+                }
+                document["pacing"]["avg_shot_seconds"] = seconds.into();
+            }
+            if let Some(style) = &v.cut_style {
+                if !crate::visions::CUT_STYLES.contains(&style.as_str()) {
+                    return Err(CoreError::Invalid("Unknown cut style.".into()));
+                }
+                document["pacing"]["cut_style"] = style.clone().into();
+            }
+        }
+        return serde_json::to_string_pretty(&document)
+            .map_err(|e| CoreError::Invalid(e.to_string()));
+    }
     let mut out = String::from(
         "# yaml-language-server: $schema=https://spearfia.dev/schemas/vision/v1.json\n",
     );
@@ -468,7 +510,7 @@ fn vision_yaml(name: &str, v: &NewVision) -> String {
             out += &format!("  cut_style: {}\n", yaml_str(c));
         }
     }
-    out
+    Ok(out)
 }
 
 /// Quote a YAML scalar only when needed.
@@ -606,6 +648,7 @@ mod tests {
             timebase: Timebase::FPS_59_94,
             target_runtime_seconds: Some(720),
             vision: NewVision {
+                template: None,
                 extends: Some("chaotic-gaming-comedy".into()),
                 goal: "Make the crashes funny, then earn the slide.".into(),
                 avg_shot_seconds: Some(1.5),
@@ -620,6 +663,36 @@ mod tests {
                 created: false,
             }),
         }
+    }
+
+    #[test]
+    fn custom_vision_is_embedded_without_losing_guidance() {
+        let root = temp_dir("custom-vision").join("episode");
+        let mut request = spec(root);
+        request.vision.extends = Some("science-explainer".into());
+        request.vision.goal.clear();
+        request.vision.template = Some(serde_json::json!({
+            "name":"science-explainer", "goal":"Explain clearly",
+            "pacing":{"max_silence_seconds":0.5},
+            "script_rules":["Explain one concept at a time"],
+            "weights":{"diagram":0.9}, "avoid":["Jargon"],
+            "references":[{"url":"https://example.com/analysis","note":"Source"}],
+            "notes":"Keep the source assumptions"
+        }));
+        let project = create_project(&request).unwrap();
+        assert_eq!(
+            project.vision_preset().as_deref(),
+            Some("science-explainer")
+        );
+        let document: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(project.vision_path()).unwrap()).unwrap();
+        assert_eq!(document["goal"], "Explain clearly");
+        assert_eq!(document["pacing"]["avg_shot_seconds"], 1.5);
+        assert_eq!(document["pacing"]["max_silence_seconds"], 0.5);
+        assert_eq!(document["script_rules"][0], "Explain one concept at a time");
+        assert_eq!(document["notes"], "Keep the source assumptions");
+        assert_eq!(crate::visions::weights(&document)["diagram"], 0.9);
+        assert_eq!(document["references"][0]["note"], "Source");
     }
 
     #[test]

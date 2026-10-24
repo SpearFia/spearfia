@@ -74,11 +74,7 @@ impl MusicStage {
     ) {
         let parsed = spearfia_script::parse(script.source());
         let tl = timing::timeline(&parsed);
-        let weights = project
-            .vision_preset()
-            .and_then(|v| spearfia_vision::preset(&v))
-            .map(|p| p.weight_map())
-            .unwrap_or_default();
+        let weights = spearfia_vision::project_weights(project);
         let mut tracks: Vec<(&Entry, f32)> = catalog
             .entries
             .iter()
