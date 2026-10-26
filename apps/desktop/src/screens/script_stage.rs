@@ -432,7 +432,7 @@ impl Buf {
         let result = if self.rel == spearfia_core::visuals::FILE {
             project.write_visuals(&self.saved, &self.source)
         } else {
-            project.write_doc(&self.rel, &self.source)
+            project.write_doc_expected(&self.rel, &self.saved, &self.source)
         };
         match result {
             Ok(()) => {
@@ -755,7 +755,7 @@ impl ScriptStage {
             Style::ALL.to_vec()
         }
     }
-    pub fn refresh_external(&mut self, project: &Project, now: f64) {
+    pub fn refresh_external(&mut self, project: &Project, now: f64, ctx: &egui::Context) {
         if now - self.last_disk_check < 1.0 {
             return;
         }
@@ -770,6 +770,14 @@ impl ScriptStage {
                 if let Ok(source) = disk
                     && source != b.saved
                 {
+                    let id = Id::new(("script-editor", b.rel.clone()));
+                    let mut state = TextEditState::load(ctx, id).unwrap_or_default();
+                    let cursor = state.cursor.char_range().unwrap_or_default();
+                    let mut undo = state.undoer();
+                    undo.add_undo(&(cursor, b.source.clone()));
+                    undo.add_undo(&(cursor, source.clone()));
+                    state.set_undoer(undo);
+                    state.store(ctx, id);
                     b.source = source.clone();
                     b.saved = source;
                     b.parsed = parse_document(&b.source, self.visual);
@@ -837,7 +845,7 @@ impl ScriptStage {
         if let Ok(comments) = Comments::load(project) {
             self.comments = comments;
         }
-        self.refresh_external(project, now);
+        self.refresh_external(project, now, ui.ctx());
         // Autosave a second after typing stops.
         for b in std::iter::once(&mut self.main).chain(self.side.as_mut()) {
             if b.dirty && now - b.last_edit > 1.0 {
@@ -4010,6 +4018,34 @@ mod tests {
 #[cfg(test)]
 mod visual_document_tests {
     use super::*;
+    #[test]
+    fn externally_saved_agent_edits_enter_desktop_undo_history() {
+        let root = std::env::temp_dir().join(format!(
+            "spearfia-agent-desktop-undo-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let project = Project {
+            root: root.clone(),
+            file: serde_json::from_str(r#"{"name":"Test","spec_version":1,"adapter":"filmcraft"}"#)
+                .unwrap(),
+        };
+        let ctx = egui::Context::default();
+        let mut editor = ScriptStage::load_visual(&project);
+        let before = editor.source().to_owned();
+        project
+            .write_visuals(&before, "# Visual Script\n\nAgent text.\n")
+            .unwrap();
+        editor.refresh_external(&project, 1.0, &ctx);
+        assert!(editor.source().contains("Agent text"));
+        editor.run(&ctx, &project, Cmd::Undo);
+        editor.flush(&project).unwrap();
+        assert_eq!(project.read_visuals().unwrap(), before);
+        editor.run(&ctx, &project, Cmd::Redo);
+        editor.flush(&project).unwrap();
+        assert!(project.read_visuals().unwrap().contains("Agent text"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn structured_edit_undo_skips_cursor_only_states() {
         let root =

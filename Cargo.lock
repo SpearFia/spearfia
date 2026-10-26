@@ -1368,6 +1368,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "httparse"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
+
+[[package]]
 name = "image"
 version = "0.25.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2816,13 +2822,16 @@ dependencies = [
 name = "spearfia-cli"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "spearfia-core",
+ "spearfia-mcp",
 ]
 
 [[package]]
 name = "spearfia-core"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.4.3",
  "quick-xml 0.42.0",
  "serde",
  "serde_json",
@@ -2850,6 +2859,9 @@ dependencies = [
 name = "spearfia-mcp"
 version = "0.1.0"
 dependencies = [
+ "httparse",
+ "serde",
+ "serde_json",
  "spearfia-core",
 ]
 

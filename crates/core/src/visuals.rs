@@ -623,7 +623,7 @@ impl Project {
                 "Visual Script changed on disk. Copy your draft, then reload before saving.",
             ));
         }
-        write_text(&self.resolve(FILE), text)
+        self.write_doc_expected(FILE, expected, text)
     }
     pub fn save_visual_export(&self, path: &std::path::Path, text: &str) -> Result<()> {
         let protected = [

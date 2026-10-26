@@ -142,8 +142,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_secs(1));
         let now = ui.input(|i| i.time);
-        ws.script.refresh_external(&ws.project, now);
-        ws.visuals.editor.refresh_external(&ws.project, now);
+        ws.script.refresh_external(&ws.project, now, ui.ctx());
+        ws.visuals
+            .editor
+            .refresh_external(&ws.project, now, ui.ctx());
         Panel::top("ws-top")
             .exact_size(44.0)
             .show_separator_line(false)

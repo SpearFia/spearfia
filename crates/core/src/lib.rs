@@ -1,14 +1,15 @@
 //! `spearfia-core`: command layer, undo history and project model. Every UI, CLI, MCP and API
 //! action is a typed command here, so AI and human edits share one undo history.
 //!
-//! So far: the shared `AssetId` type, the project model (create, open, save) and per-user
-//! app state (recent projects, catalog sources). The undo history comes with the first
-//! editing commands.
+//! Includes project/channel/catalog state and revision-guarded agent document/cue edits.
+//! Server undo history is bounded and session-local; the desktop records clean external
+//! edits in its document undo history.
 
 pub mod app_state;
 pub mod channels;
 pub mod comments;
 pub mod docx;
+pub mod editing;
 pub mod error;
 pub mod links;
 pub mod media;

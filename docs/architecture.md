@@ -5,8 +5,9 @@ A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
 ## One command layer
 
 The UI, the CLI, the MCP server and the local API all call the same typed operations in
-`spearfia-core`. Because AI actions and human actions go through one layer, they share one
-undo history: you can undo what the AI did the same way you undo your own edit.
+`spearfia-core`. Script and Visual Script agent edits use revision-guarded core commands with bounded
+server-session undo/redo. Clean external changes enter the desktop document undo history.
+Different server processes do not share a persistent global undo log.
 
 ## Intent here, realization in the editor
 
@@ -78,8 +79,8 @@ can read/check the handoff but have no CLI approval operation. This is a local w
 gate, not a security boundary against arbitrary filesystem writes.
 
 See [agents.md](agents.md) for implemented agent entry points and the current boundaries
-of the MCP/API, generation and FilmCraft sync scaffolds.
+of implemented MCP/API editing and the remaining generation and FilmCraft sync scaffolds.
 
 ## Visual Script
 
-Optional `visuals/visuals.md` holds visual directions with stable cue IDs, narration anchors, production methods, references and independent asset/review states. The desktop reuses the document editor. Core operations preserve unknown prose/metadata and back read-only CLI exports. See [the Visual Script guide](visual-script.md) for current behavior and revision handling.
+Optional `visuals/visuals.md` holds visual directions with stable cue IDs, narration anchors, production methods, references and independent asset/review states. The desktop reuses the document editor. Core operations preserve unknown prose/metadata and back CLI exports plus the implemented project-bound MCP stdio/local HTTP editing tools. See [the Visual Script guide](visual-script.md) for current behavior and revision handling.

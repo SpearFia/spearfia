@@ -74,6 +74,6 @@ visual attachments. It includes production context and never authorizes publishi
 exports are planning artifacts and include attachment warnings. Exporting does not run a
 generator, validate a Remotion rig or transfer a FilmCraft timeline. Core operations parse,
 add, update, split, merge, reanchor and reorder shots; the desktop uses those operations.
-The CLI exports are read-only. MCP/API editing transports remain scaffolds. Agents can
-read both Markdown documents and use these exports as planning context. Never forge
-approval records.
+The one-shot CLI exports are read-only. The running [MCP and HTTP servers](agents.md) now
+provide document/typed-cue editing and revision-guarded undo/redo. Agents read both documents
+before editing and use returned revisions. Never forge approval records.
