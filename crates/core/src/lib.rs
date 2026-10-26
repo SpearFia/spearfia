@@ -6,6 +6,7 @@
 //! editing commands.
 
 pub mod app_state;
+pub mod channels;
 pub mod comments;
 pub mod docx;
 pub mod error;

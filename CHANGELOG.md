@@ -6,6 +6,17 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Channels
+
+- Reusable channel workspaces store editable/importable Markdown for identity, style,
+  lessons, staple assets and production tools. Videos keep portable channel.md snapshots.
+  Saved-script approval guards production handoffs and becomes stale when the script or
+  channel brief changes. Read-only CLI commands expose channel context, drafting briefs
+  and guarded handoffs to agents. Workflow/MCP documentation covers ComfyUI, VoiceStudio,
+  optional editing stages and FilmCraft review, distinguishing implemented features from
+  external integrations and remaining scaffolds.
+
+
 ### Media folders
 
 - Copy files from Explorer into a highlighted media folder. Create folders, drag files

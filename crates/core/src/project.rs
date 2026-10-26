@@ -322,6 +322,8 @@ pub enum ScriptStart {
 #[derive(Debug, Clone)]
 pub struct NewProject {
     pub name: String,
+    /// Snapshot of shared channel guidance, stored as ordinary channel.md.
+    pub channel_brief: Option<String>,
     pub series: Option<String>,
     /// The project folder. Created if missing; may already hold media.
     pub root: PathBuf,
@@ -370,6 +372,14 @@ pub fn create_project(spec: &NewProject) -> Result<Project> {
             root.display()
         )));
     }
+    if let Some(brief) = &spec.channel_brief {
+        crate::channels::validate_brief(brief)?;
+        if root.join(crate::channels::PROJECT_BRIEF).exists() {
+            return Err(CoreError::Invalid(
+                "The project folder already contains channel.md; it was not overwritten.".into(),
+            ));
+        }
+    }
     let script_text = match &spec.script {
         ScriptStart::Sections => starter_script(name, spec.format),
         ScriptStart::Import(path) => imported_script(path, name, spec.format)?,
@@ -410,6 +420,9 @@ pub fn create_project(spec: &NewProject) -> Result<Project> {
 
     write_text(&project.vision_path(), &vision_source)?;
     project.write_script(&script_text)?;
+    if let Some(brief) = &spec.channel_brief {
+        project.set_channel_brief(None, brief)?;
+    }
     write_text(&project.root.join("links.json"), "{\n  \"links\": []\n}\n")?;
     write_text(&project.root.join(".gitignore"), "cache/\nexports/\n")?;
     project.save()?;
@@ -640,6 +653,7 @@ mod tests {
 
     fn spec(root: PathBuf) -> NewProject {
         NewProject {
+            channel_brief: None,
             name: "Ep 2 · First Contact".into(),
             series: Some("Learning to Drift".into()),
             root,
@@ -770,5 +784,30 @@ mod tests {
         assert_eq!(f.settings.resolution, [1080, 1920]);
         assert_eq!(f.format, Format::LongForm);
         assert!(f.filmcraft.is_none());
+    }
+    #[test]
+    fn creates_a_portable_channel_brief_without_overwriting_existing_guidance() {
+        let root = temp_dir("create-channel-project").join("episode");
+        let mut request = spec(root.clone());
+        request.channel_brief = Some("# Channel: Example\nStyle and lessons".into());
+        let project = create_project(&request).unwrap();
+        assert_eq!(project.channel_brief().unwrap(), request.channel_brief);
+        assert_eq!(
+            project.script_approval(None).unwrap(),
+            crate::channels::Approval::Draft
+        );
+        let occupied = temp_dir("occupied-channel-project");
+        fs::write(occupied.join("channel.md"), "Existing channel guidance").unwrap();
+        request.root = occupied.clone();
+        assert!(create_project(&request).is_err());
+        assert_eq!(
+            fs::read_to_string(occupied.join("channel.md")).unwrap(),
+            "Existing channel guidance"
+        );
+        assert!(!occupied.join("project.json").exists());
+        request.root = temp_dir("invalid-channel-project").join("not-created");
+        request.channel_brief = Some(String::new());
+        assert!(create_project(&request).is_err());
+        assert!(!request.root.exists());
     }
 }

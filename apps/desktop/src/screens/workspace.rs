@@ -94,6 +94,7 @@ pub struct Workspace {
     pub effects: EffectsStage,
     pub sfx: SfxStage,
     pub links: Links,
+    pub channel: crate::screens::channels::ProjectChannelView,
     /// Shown in the top bar if `links.json` can't be read.
     pub links_error: Option<String>,
 }
@@ -116,6 +117,7 @@ impl Workspace {
             effects: EffectsStage::new(),
             sfx: SfxStage::new(),
             links,
+            channel: crate::screens::channels::ProjectChannelView::default(),
             links_error,
         }
     }
@@ -160,6 +162,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             widgets::chip(ui, "links.json unreadable", theme::DANGER)
                                 .on_hover_text(e);
                         }
+                        if widgets::button(ui, "Channel / handoff").clicked() {
+                            ws.channel.open = true;
+                            ws.channel.refresh(&ws.project, ws.script.source());
+                        }
                         if let Some(v) = ws.project.vision_preset() {
                             widgets::chip(ui, &format!("Vision: {v}"), theme::CUE_VISION);
                         }
@@ -202,6 +208,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             Stage::SoundEffects => ws.sfx.show(ui, &ws.project, &mut ws.script, catalog),
             other => placeholder(ui, other),
         }
+        crate::screens::channels::project_window(ws, &app.channels, ui);
     }
     if go_home {
         app.cards.clear();
