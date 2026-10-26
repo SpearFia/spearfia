@@ -7,6 +7,7 @@
 
 pub mod app_state;
 pub mod comments;
+pub mod docx;
 pub mod error;
 pub mod links;
 pub mod media;
