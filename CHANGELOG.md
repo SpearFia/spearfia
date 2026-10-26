@@ -6,6 +6,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Agent editing
+
+- Implement project-bound MCP stdio and authenticated local HTTP editing tools for narration and Visual Script, including typed cue operations, revision conflicts, reference binding and bounded undo/redo. Clean agent edits enter desktop undo; production approval remains creator-only.
+
 ### Visual Script
 
 - Add Visual Script after Script: shared Markdown editor, narration-linked visual cues, contextual production details, references, coverage/readiness/review, split/merge/shots and agent exports.

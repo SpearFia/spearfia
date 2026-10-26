@@ -13,3 +13,4 @@ serde.workspace = true
 serde_json.workspace = true
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
+getrandom = "0.4.3"

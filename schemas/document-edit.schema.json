@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/document-edit/v1.json",
+  "type": "object",
+  "properties": {
+    "start": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1048576
+    },
+    "end": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1048576
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 1048576
+    }
+  },
+  "required": [
+    "start",
+    "end",
+    "text"
+  ],
+  "additionalProperties": false
+}

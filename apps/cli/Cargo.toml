@@ -13,3 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 spearfia-core.workspace = true
+spearfia-mcp.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/visual-edit/v1.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "create"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "action",
+        "title",
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "update"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        },
+        "patch": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "body": {
+              "type": "string",
+              "maxLength": 1048576
+            },
+            "visual_type": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "method": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "asset_state": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "review": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "timing": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "details": {
+              "type": "object",
+              "maxProperties": 128,
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "references": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "maxLength": 8192
+                  },
+                  "path": {
+                    "type": "string",
+                    "maxLength": 8192
+                  },
+                  "revision": {
+                    "type": "string",
+                    "maxLength": 8192
+                  },
+                  "scope": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                },
+                "required": [
+                  "role",
+                  "path",
+                  "revision",
+                  "scope"
+                ]
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "action",
+        "id",
+        "patch"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "delete"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        }
+      },
+      "required": [
+        "action",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "split"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "action",
+        "id",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "merge"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        }
+      },
+      "required": [
+        "action",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "reanchor"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "action",
+        "id",
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "bind_reference"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        },
+        "reference": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "revision": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "scope": {
+              "type": "string",
+              "maxLength": 8192
+            }
+          },
+          "required": [
+            "role",
+            "path",
+            "revision",
+            "scope"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "id",
+        "reference"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "add_shot"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        }
+      },
+      "required": [
+        "action",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "const": "move_shot"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,79}$"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      },
+      "required": [
+        "action",
+        "id",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

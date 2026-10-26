@@ -82,6 +82,6 @@ authentication against a process that can modify arbitrary project files.
 Channel creation/editing/import, project snapshots, approval checks, clipboard handoffs
 and the read-only CLI commands in [agents.md](agents.md) are implemented. ComfyUI and
 VoiceStudio jobs are performed through separately available agent/tool connections; this
-feature does not launch them. Spear Fia's MCP/API transports and FilmCraft timeline
-sync remain scaffolds. A handoff must report a missing integration rather than claim production or a
+feature does not launch them. Spear Fia's MCP/HTTP servers provide Script and Visual Script editing; FilmCraft timeline
+sync remains a scaffold. A handoff must report a missing integration rather than claim production or a
 FilmCraft push succeeded.

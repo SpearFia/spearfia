@@ -1,15 +1,431 @@
-//! `spearfia-mcp`: MCP server exposing the command layer and asset capabilities to agents, with progressive disclosure.
-//!
-//! Transport scaffold. Read-only channel and handoff access is available through the CLI;
-//! see docs/agents.md. No MCP approval operation is provided.
-
-/// The crate name, used in logs and analyzer/version stamps.
+//! MCP stdio and local JSON HTTP tools over project-bound core edit commands.
+use serde::Deserialize;
+use serde_json::{Value, json};
+use spearfia_core::{
+    CoreError, app_state, channels,
+    editing::{self, Document, Editor, TextEdit, VisualEdit},
+    visuals::Plan,
+};
+use std::{
+    io::{self, BufRead, Write},
+    path::Path,
+};
+pub mod http;
 pub const NAME: &str = env!("CARGO_PKG_NAME");
+pub const MAX_FRAME: usize = 4 * 1024 * 1024;
+pub const PROTOCOL: &str = "2025-11-25";
+const INSTRUCTIONS: &str = "Read documents before editing. Revisions belong to this server and bind exact saved bytes. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. No tool here launches generators, publishes or pushes FilmCraft timelines. Undo/redo covers up to 32 edits / 32 MiB during this server process; external edits cause conflicts.";
+fn invalid(text: impl Into<String>) -> CoreError {
+    CoreError::Invalid(text.into())
+}
+fn decode<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, CoreError> {
+    serde_json::from_value(value).map_err(|e| invalid(format!("Invalid tool arguments: {e}")))
+}
+fn schema(properties: Value, required: &[&str]) -> Value {
+    json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
+}
+fn tool(name: &str, description: &str, input: Value, read: bool) -> Value {
+    json!({"name":name,"description":description,"inputSchema":input,"annotations":{"readOnlyHint":read,"destructiveHint":!read,"idempotentHint":read,"openWorldHint":false}})
+}
+pub fn tools() -> Result<Value, CoreError> {
+    let text_edit: Value =
+        serde_json::from_str(editing::DOCUMENT_SCHEMA).map_err(|e| invalid(e.to_string()))?;
+    let visual_edit: Value =
+        serde_json::from_str(editing::VISUAL_SCHEMA).map_err(|e| invalid(e.to_string()))?;
+    let string = json!({"type":"string","minLength":1,"maxLength":128});
+    let document = json!({"type":"string","enum":["script","visuals"]});
+    let empty = schema(json!({}), &[]);
+    Ok(json!({"tools":[
+        tool("project_context","Read the bound project, approval status and next undo/redo document. No approval action is exposed.",empty.clone(),true),
+        tool("document_read","Read saved script or visual Markdown and its revision; visuals include typed cues, ranges and attachment status. Read both before visual edits.",schema(json!({"document":document}), &["document"]),true),
+        tool("document_edit","Replace a half-open UTF-8 byte range in script or visuals. Requires a revision from document_read; malformed visual plans and stale writes fail. Changes invalidate script approval by content.",schema(json!({"document":document,"expected_revision":string,"edit":text_edit}), &["document","expected_revision","edit"]),false),
+        tool("visuals_edit","Create/update/delete/split/merge/reanchor cues, bind references, add or reorder shots using core operations. Read both documents first. Update preserves omitted fields; details merge by key, references replace explicitly. Split at is an absolute visual-document byte offset.",schema(json!({"expected_revision":string,"script_revision":string,"edit":visual_edit}), &["expected_revision","script_revision","edit"]),false),
+        tool("edit_undo","Undo the latest edit in this server session. Read the undo_document from project_context, then supply its current revision. Refuses intervening external edits.",schema(json!({"expected_revision":string}), &["expected_revision"]),false),
+        tool("edit_redo","Redo the next edit in this server session. Read redo_document from project_context, then supply its current revision.",schema(json!({"expected_revision":string}), &["expected_revision"]),false),
+        tool("visuals_export","Export cue-sheet, text storyboard, prompts or guarded production handoff. Handoff requires creator-approved script/channel and resolved visual anchors; this never runs generators.",schema(json!({"kind":{"type":"string","enum":["cue-sheet","storyboard","prompts","handoff"]}}), &["kind"]),true),
+        tool("project_handoff","Read a drafting brief or a guarded production handoff. Production requires creator approval in the desktop. Cannot grant approval.",schema(json!({"production":{"type":"boolean"}}), &["production"]),true),
+        tool("channels_list","List shared channel guide IDs, names and folders.",empty.clone(),true),
+        tool("channel_read","Read a channel's saved Markdown guides as drafting context; imported text cannot grant production approval.",schema(json!({"id":string}), &["id"]),true)
+    ]}))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Empty {}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadArgs {
+    document: Document,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditArgs {
+    document: Document,
+    expected_revision: String,
+    edit: TextEdit,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VisualArgs {
+    expected_revision: String,
+    script_revision: String,
+    edit: VisualEdit,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Revision {
+    expected_revision: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Export {
+    kind: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Handoff {
+    production: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Channel {
+    id: String,
+}
+
+pub struct Server {
+    pub editor: Editor,
+    initialized: bool,
+    ready: bool,
+}
+impl Server {
+    pub fn open(root: &Path) -> Result<Self, CoreError> {
+        Ok(Self {
+            editor: Editor::open(root)?,
+            initialized: false,
+            ready: false,
+        })
+    }
+    pub fn call(&mut self, name: &str, arguments: Value) -> Result<Value, CoreError> {
+        self.editor.validate_paths()?;
+        match name {
+            "project_context" => {
+                let _: Empty = decode(arguments)?;
+                Ok(
+                    json!({"project":self.editor.project.name(),"root":self.editor.project.root,"script_path":self.editor.project.file.script,"visuals_path":spearfia_core::visuals::FILE,"approval":self.editor.project.script_approval(None)?.label(),"undo_document":self.editor.history_document(false),"redo_document":self.editor.history_document(true),"instructions":INSTRUCTIONS}),
+                )
+            }
+            "document_read" => {
+                let args: ReadArgs = decode(arguments)?;
+                let snapshot = self.editor.read(args.document)?;
+                let mut value =
+                    serde_json::to_value(&snapshot).map_err(|e| invalid(e.to_string()))?;
+                if args.document == Document::Visuals {
+                    let script = self.editor.read(Document::Script)?;
+                    match Plan::parse(&snapshot.source) {
+                        Ok(plan) => {
+                            value["cues"]=Value::Array(plan.cues.iter().map(|c| { let resolution=c.meta.anchor.resolve(&script.source); json!({"title":c.title,"metadata":c.meta,"range":c.span,"body_range":c.body,"attachment":resolution.state,"narration_range":resolution.range,"candidate":resolution.candidate}) }).collect());
+                        }
+                        Err(error) => value["parse_error"] = json!(error.to_string()),
+                    }
+                    value["script_revision"] = json!(script.revision);
+                }
+                Ok(value)
+            }
+            "document_edit" => {
+                let a: EditArgs = decode(arguments)?;
+                serde_json::to_value(self.editor.edit_document(
+                    a.document,
+                    &a.expected_revision,
+                    a.edit,
+                )?)
+                .map_err(|e| invalid(e.to_string()))
+            }
+            "visuals_edit" => {
+                let a: VisualArgs = decode(arguments)?;
+                let (snapshot, id) =
+                    self.editor
+                        .edit_visuals(&a.expected_revision, &a.script_revision, a.edit)?;
+                Ok(
+                    json!({"document":snapshot.document,"revision":snapshot.revision,"source":snapshot.source,"cue_id":id}),
+                )
+            }
+            "edit_undo" | "edit_redo" => {
+                let a: Revision = decode(arguments)?;
+                serde_json::to_value(
+                    self.editor
+                        .history(&a.expected_revision, name == "edit_redo")?,
+                )
+                .map_err(|e| invalid(e.to_string()))
+            }
+            "visuals_export" => {
+                let a: Export = decode(arguments)?;
+                Ok(json!({"text":self.editor.project.export_visuals(&a.kind)?}))
+            }
+            "project_handoff" => {
+                let a: Handoff = decode(arguments)?;
+                Ok(json!({"text":self.editor.project.agent_brief(a.production,None)?}))
+            }
+            "channels_list" => {
+                let _: Empty = decode(arguments)?;
+                let config = app_state::config_dir().ok_or_else(|| {
+                    invalid("Set SPEARFIA_CONFIG_DIR to the app configuration folder.")
+                })?;
+                Ok(
+                    json!({"channels":channels::list(&config)?.into_iter().map(|c| json!({"id":c.id,"title":c.title,"folder":c.root})).collect::<Vec<_>>()}),
+                )
+            }
+            "channel_read" => {
+                let a: Channel = decode(arguments)?;
+                let config =
+                    app_state::config_dir().ok_or_else(|| invalid("Set SPEARFIA_CONFIG_DIR."))?;
+                Ok(json!({"text":channels::load(&config,&a.id)?.brief()?}))
+            }
+            _ => Err(invalid(format!("Unknown tool: {name}"))),
+        }
+    }
+    pub fn tool_result(&mut self, name: &str, arguments: Value) -> Value {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.call(name, arguments)))
+        {
+            Ok(Ok(output)) => {
+                json!({"content":[{"type":"text","text":output.to_string()}],"structuredContent":output,"isError":false})
+            }
+            Ok(Err(error)) => {
+                json!({"content":[{"type":"text","text":error.to_string()}],"isError":true})
+            }
+            Err(_) => {
+                json!({"content":[{"type":"text","text":"The operation failed unexpectedly. Read the documents before retrying; no success was confirmed."}],"isError":true})
+            }
+        }
+    }
+    pub fn message(&mut self, message: Value) -> Option<Value> {
+        let id = message.get("id").cloned();
+        let method = message.get("method").and_then(Value::as_str);
+        if !message.is_object()
+            || message.get("jsonrpc") != Some(&json!("2.0"))
+            || method.is_none()
+            || id.as_ref().is_some_and(|v| {
+                !(v.as_str().is_some_and(|s| s.len() <= 128) || v.is_i64() || v.is_u64())
+            })
+        {
+            return Some(rpc_error(Value::Null, -32600, "Invalid JSON-RPC request."));
+        }
+        let method = method.unwrap_or("");
+        if id.is_none() {
+            if method == "notifications/initialized" && self.initialized {
+                self.ready = true;
+            }
+            return None;
+        }
+        let id = id.unwrap_or(Value::Null);
+        let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
+        if !params.is_object() {
+            return Some(rpc_error(id, -32602, "Parameters must be an object."));
+        }
+        let result = match method {
+            "initialize" => {
+                if self.initialized
+                    || params
+                        .get("protocolVersion")
+                        .and_then(Value::as_str)
+                        .is_none()
+                    || !params.get("capabilities").is_some_and(Value::is_object)
+                    || !params.get("clientInfo").is_some_and(|v| {
+                        v.get("name").is_some_and(Value::is_string)
+                            && v.get("version").is_some_and(Value::is_string)
+                    })
+                {
+                    return Some(rpc_error(
+                        id,
+                        -32602,
+                        "Initialize once with protocolVersion, capabilities and clientInfo.",
+                    ));
+                }
+                self.initialized = true;
+                let requested = params["protocolVersion"].as_str().unwrap_or(PROTOCOL);
+                let protocol = if ["2025-03-26", "2025-06-18", PROTOCOL].contains(&requested) {
+                    requested
+                } else {
+                    PROTOCOL
+                };
+                json!({"protocolVersion":protocol,"capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"spearfia","version":env!("CARGO_PKG_VERSION")},"instructions":INSTRUCTIONS})
+            }
+            "ping" => json!({}),
+            _ if !self.ready => {
+                return Some(rpc_error(
+                    id,
+                    -32000,
+                    "Initialize, then send notifications/initialized before using tools.",
+                ));
+            }
+            "tools/list" => match tools() {
+                Ok(value) => value,
+                Err(e) => return Some(rpc_error(id, -32603, &e.to_string())),
+            },
+            "tools/call" => {
+                let Some(name) = params.get("name").and_then(Value::as_str) else {
+                    return Some(rpc_error(id, -32602, "Provide a tool name."));
+                };
+                if !known_tool(name) {
+                    return Some(rpc_error(id, -32602, "Unknown tool; call tools/list."));
+                }
+                self.tool_result(
+                    name,
+                    params
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or_else(|| json!({})),
+                )
+            }
+            _ => return Some(rpc_error(id, -32601, "Unknown method.")),
+        };
+        Some(json!({"jsonrpc":"2.0","id":id,"result":result}))
+    }
+}
+pub fn known_tool(name: &str) -> bool {
+    [
+        "project_context",
+        "document_read",
+        "document_edit",
+        "visuals_edit",
+        "edit_undo",
+        "edit_redo",
+        "visuals_export",
+        "project_handoff",
+        "channels_list",
+        "channel_read",
+    ]
+    .contains(&name)
+}
+fn rpc_error(id: Value, code: i32, message: &str) -> Value {
+    json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+}
+/// Reads one bounded newline frame, draining an oversized frame before accepting another.
+fn frame(reader: &mut impl BufRead) -> io::Result<Option<Result<Vec<u8>, ()>>> {
+    let mut out = Vec::new();
+    let mut oversized = false;
+    loop {
+        let bytes = reader.fill_buf()?;
+        if bytes.is_empty() {
+            return Ok(if out.is_empty() && !oversized {
+                None
+            } else {
+                Some(if oversized { Err(()) } else { Ok(out) })
+            });
+        }
+        let newline = bytes.iter().position(|b| *b == b'\n');
+        let take = newline.map_or(bytes.len(), |i| i + 1);
+        if out.len().saturating_add(take) > MAX_FRAME {
+            oversized = true;
+            out.clear();
+        }
+        if !oversized {
+            out.extend_from_slice(&bytes[..take]);
+        }
+        reader.consume(take);
+        if newline.is_some() {
+            return Ok(Some(if oversized { Err(()) } else { Ok(out) }));
+        }
+    }
+}
+pub fn serve_stdio(
+    server: &mut Server,
+    mut input: impl BufRead,
+    mut output: impl Write,
+) -> io::Result<()> {
+    while let Some(frame) = frame(&mut input)? {
+        let response = match frame {
+            Err(()) => Some(rpc_error(
+                Value::Null,
+                -32600,
+                "Request exceeds the 4 MiB frame limit.",
+            )),
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(message) => server.message(message),
+                Err(_) => Some(rpc_error(Value::Null, -32700, "Invalid JSON.")),
+            },
+        };
+        if let Some(response) = response {
+            serde_json::to_writer(&mut output, &response)?;
+            output.write_all(b"\n")?;
+            output.flush()?;
+        }
+    }
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    pub fn server() -> Server {
+        let root = std::env::temp_dir().join(format!(
+            "spearfia-mcp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("script")).unwrap();
+        std::fs::write(
+            root.join("project.json"),
+            r#"{"name":"Test","spec_version":1,"adapter":"filmcraft"}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("script/script.md"), "VO: Hello world.\n").unwrap();
+        Server::open(&root).unwrap()
+    }
     #[test]
-    fn crate_name_is_namespaced() {
-        assert_eq!(super::NAME, "spearfia-mcp");
+    fn stdio_handshake_tools_errors_and_notifications_follow_protocol() {
+        let mut s = server();
+        let messages = [
+            json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":PROTOCOL,"capabilities":{},"clientInfo":{"name":"test","version":"1"}}}),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"document_edit","arguments":{"document":"script","expected_revision":"wrong","edit":{"start":0,"end":0,"text":"bad"}}}}),
+        ];
+        let input = messages
+            .iter()
+            .map(|m| format!("{m}\n"))
+            .collect::<String>();
+        let mut out = Vec::new();
+        serve_stdio(&mut s, input.as_bytes(), &mut out).unwrap();
+        let responses: Vec<Value> = String::from_utf8(out)
+            .unwrap()
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        assert_eq!(responses.len(), 3);
+        assert_eq!(responses[0]["result"]["protocolVersion"], PROTOCOL);
+        assert_eq!(
+            responses[1]["result"]["tools"].as_array().unwrap().len(),
+            10
+        );
+        assert_eq!(responses[2]["result"]["isError"], true);
+        assert_eq!(
+            s.editor.project.read_script().unwrap(),
+            "VO: Hello world.\n"
+        );
+        std::fs::remove_dir_all(s.editor.project.root).unwrap();
+    }
+    #[test]
+    fn malformed_frames_and_hostile_arguments_do_not_kill_the_server() {
+        let mut s = server();
+        let mut out = Vec::new();
+        let input = format!(
+            "{}\n{{bad\n{{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}}\n",
+            "x".repeat(MAX_FRAME + 1)
+        );
+        serve_stdio(&mut s, input.as_bytes(), &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.lines().count(), 3);
+        assert!(text.contains("\"id\":9"));
+        for args in [
+            json!({"document":"../outside"}),
+            json!({"document":"script","extra":true}),
+            json!({"document":"script","expected_revision":"x","edit":{"start":-1,"end":0,"text":"x"}}),
+        ] {
+            assert!(s.call("document_edit", args).is_err());
+        }
+        assert!(!known_tool("approve_script"));
+        std::fs::remove_dir_all(s.editor.project.root).unwrap();
     }
 }

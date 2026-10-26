@@ -30,6 +30,10 @@ run ComfyUI, VoiceStudio or FilmCraft sync.
 
 **Visual Script** follows Script in each project: linked narration, visual directions, production details, references, coverage/review and agent exports. See [the guide](docs/visual-script.md).
 
+## Agent editing
+
+Start `spearfia mcp --project <folder>` for MCP stdio, or `spearfia api --project <folder>` for the authenticated loopback HTTP API. Script/Visual Script edits use revision checks and undo/redo; creator approval stays in the desktop. See [setup and tool reference](docs/agents.md).
+
 ## License
 
 Licensed under either of

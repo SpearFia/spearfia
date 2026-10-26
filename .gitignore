@@ -27,3 +27,6 @@ desktop.ini
 *.aac
 *.exr
 *.drp
+
+# Local project document save lock (released by the OS on close).
+.spearfia-edit.lock
