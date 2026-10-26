@@ -135,6 +135,13 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`examples/script/script.md`), which `docs/script-directives.md` now documents.
 - Catalog names match whatever the separator: `telemetry overlay` finds `telemetry-overlay`.
 
+- New Project is five steps that open one after another: Basics first, then Continue
+  opens the next once its required fields are filled. Any step opens from its header at
+  any time; finished steps collapse to a one-line summary.
+- Script import takes `.docx` (Word or Google Docs downloads): headings, bold, italic,
+  underline, strike, lists and tables carry over; what doesn't (images, comments) is noted
+  at the top of the script. Imported files without front matter get one.
+
 ### Fixed
 
 - "Use" buttons in the Transitions library did nothing: the drag area sat on top of them.
