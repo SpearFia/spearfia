@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
-const HELP: &str = "Spear Fia\n\nspearfia channels list\nspearfia channels read <channel-id>\nspearfia project brief <project-folder>\nspearfia project handoff <project-folder>\nspearfia project status <project-folder>\n\nChannel commands use SPEARFIA_CONFIG_DIR or the normal app config folder.\nProduction handoff requires the creator's saved-script approval in the desktop app.\nSee docs/agents.md for the workflow; these commands do not run generators.\n";
+const HELP: &str = "Spear Fia\n\nspearfia channels list\nspearfia channels read <channel-id>\nspearfia project brief <project-folder>\nspearfia project handoff <project-folder>\nspearfia project status <project-folder>\nspearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>\n\nChannel commands use SPEARFIA_CONFIG_DIR or the normal app config folder.\nProduction handoff requires the creator's saved-script approval in the desktop app.\nSee docs/agents.md for the workflow; these commands do not run generators.\n";
 
 fn version_line() -> String {
     format!("spearfia {}", env!("CARGO_PKG_VERSION"))
@@ -38,6 +38,19 @@ fn run(args: &[OsString], config: Option<&Path>) -> Result<String, CoreError> {
             let id =
                 arg(2).ok_or_else(|| CoreError::Invalid("The channel ID must be text.".into()))?;
             channels::load(config, id)?.brief()
+        }
+        (
+            Some("visuals"),
+            Some(action @ ("read" | "cue-sheet" | "storyboard" | "prompts" | "handoff")),
+            3,
+        ) => {
+            let path = args.get(2).ok_or_else(|| CoreError::Invalid(HELP.into()))?;
+            let project = Project::open(std::path::PathBuf::from(path))?;
+            if action == "read" {
+                project.read_visuals()
+            } else {
+                project.export_visuals(action)
+            }
         }
         (Some("project"), Some(action @ ("brief" | "handoff" | "status")), 3) => {
             let path = args.get(2).ok_or_else(|| CoreError::Invalid(HELP.into()))?;

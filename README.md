@@ -26,6 +26,10 @@ See [channel workflow](docs/channel-workflow.md) and [agent/CLI access](docs/age
 This release provides knowledge and approval-based handoff; it does not automatically
 run ComfyUI, VoiceStudio or FilmCraft sync.
 
+## Visual Script
+
+**Visual Script** follows Script in each project: linked narration, visual directions, production details, references, coverage/review and agent exports. See [the guide](docs/visual-script.md).
+
 ## License
 
 Licensed under either of

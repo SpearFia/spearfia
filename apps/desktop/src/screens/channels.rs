@@ -333,6 +333,16 @@ pub fn project_window(ws: &mut Workspace, channels: &[Channel], ui: &mut egui::U
 }
 
 pub fn guard_close(app: &mut App, ctx: &egui::Context) {
+    if ctx.input(|i| i.viewport().close_requested())
+        && let crate::app::View::Workspace(ws) = &mut app.view
+        && let Err(error) = ws
+            .script
+            .flush(&ws.project)
+            .and_then(|()| ws.visuals.editor.flush(&ws.project))
+    {
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        ws.document_error = Some(error);
+    }
     if ctx.input(|i| i.viewport().close_requested()) && app.channel_view.dirty() {
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         app.channel_view.closing = true;

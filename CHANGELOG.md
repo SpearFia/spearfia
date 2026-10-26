@@ -6,6 +6,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Visual Script
+
+- Add Visual Script after Script: shared Markdown editor, narration-linked visual cues, contextual production details, references, coverage/readiness/review, split/merge/shots and agent exports.
+
 ### Channels
 
 - Reusable channel workspaces store editable/importable Markdown for identity, style,
