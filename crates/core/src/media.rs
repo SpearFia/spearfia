@@ -195,6 +195,7 @@ mod tests {
     fn project() -> Project {
         let root = temp_dir("media").join("P");
         create_project(&NewProject {
+            channel_brief: None,
             name: "P".into(),
             series: None,
             root,

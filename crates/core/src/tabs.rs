@@ -105,6 +105,7 @@ mod tests {
 
     fn project() -> Project {
         create_project(&NewProject {
+            channel_brief: None,
             name: "Ep 1".into(),
             series: None,
             root: temp_dir("tabs").join("P"),

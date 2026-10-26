@@ -2,6 +2,7 @@
 //! project with its workflow stages.
 
 pub mod catalog;
+pub mod channels;
 pub mod effects_stage;
 pub mod home;
 pub mod media_stage;

@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 pub enum HomeTab {
     Projects,
     Catalog,
+    Channels,
 }
 
 pub enum View {
@@ -30,6 +31,9 @@ pub struct App {
     pub settings: AppSettings,
     pub catalog: Catalog,
     pub visions: Vec<spearfia_core::visions::Vision>,
+    pub channels: Vec<spearfia_core::channels::Channel>,
+    pub channel_view: screens::channels::ChannelView,
+    pub channel_error: Option<String>,
     pub vision_errors: Vec<String>,
     pub filmcraft: Option<Install>,
     pub view: View,
@@ -59,6 +63,9 @@ impl App {
             settings,
             catalog: Catalog::default(),
             visions: Vec::new(),
+            channels: Vec::new(),
+            channel_view: screens::channels::ChannelView::default(),
+            channel_error: None,
             vision_errors: Vec::new(),
             filmcraft: spearfia_adapter_filmcraft::detect(),
             view: View::Home,
@@ -71,6 +78,7 @@ impl App {
             now: app_state::now_unix(),
         };
         app.reload_catalog();
+        screens::channels::reload(&mut app);
         if !app.recents.projects.is_empty() {
             app.selected = Some(0);
         }
@@ -136,6 +144,7 @@ impl App {
             self.settings.projects_dir.clone(),
             self.series_hint(),
             self.visions.clone(),
+            self.channels.clone(),
         );
         self.view = View::NewProject(Box::new(form));
     }
@@ -155,5 +164,6 @@ impl eframe::App for App {
             View::NewProject(_) => screens::new_project::show(self, ui),
             View::Workspace(_) => screens::workspace::show(self, ui),
         }
+        screens::channels::guard_close(self, ui.ctx());
     }
 }

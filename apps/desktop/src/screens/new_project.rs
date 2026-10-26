@@ -26,6 +26,8 @@ enum Conn {
 
 pub struct NewProjectForm {
     name: String,
+    channels: Vec<spearfia_core::channels::Channel>,
+    channel: Option<String>,
     series: String,
     /// Folder new projects go in; the project folder is `<parent>/<slug>`.
     parent: String,
@@ -64,10 +66,13 @@ impl NewProjectForm {
         projects_dir: Option<PathBuf>,
         series: Option<String>,
         visions: Vec<spearfia_core::visions::Vision>,
+        channels: Vec<spearfia_core::channels::Channel>,
     ) -> Self {
         let preset = visions.first();
         Self {
             name: String::new(),
+            channels,
+            channel: None,
             series: series.unwrap_or_default(),
             parent: projects_dir
                 .map(|p| p.display().to_string())
@@ -97,6 +102,14 @@ impl NewProjectForm {
             done: [false; STEPS],
             scroll_to: None,
         }
+    }
+
+    pub fn choose_channel(&mut self, id: &str) -> Result<(), String> {
+        if !self.channels.iter().any(|c| c.id == id) {
+            return Err("The selected channel is no longer available.".into());
+        }
+        self.channel = Some(id.to_owned());
+        Ok(())
     }
 
     fn slug(&self) -> String {
@@ -145,7 +158,19 @@ impl NewProjectForm {
             }
             ScriptMode::Import => ScriptStart::Import(PathBuf::from(self.import_path.trim())),
         };
+        let channel_brief = match &self.channel {
+            Some(id) => Some(
+                self.channels
+                    .iter()
+                    .find(|c| &c.id == id)
+                    .ok_or_else(|| "The selected channel is no longer available.".to_owned())?
+                    .brief()
+                    .map_err(|e| e.to_string())?,
+            ),
+            None => None,
+        };
         Ok(NewProject {
+            channel_brief,
             name: self.name.trim().to_owned(),
             series: Some(self.series.clone()),
             root,
@@ -414,6 +439,23 @@ fn basics(f: &mut NewProjectForm, ui: &mut egui::Ui) {
         {
             f.error = None;
         }
+        field_label(ui, "Channel (optional)");
+        egui::ComboBox::from_id_salt("new-project-channel")
+            .selected_text(
+                f.channels
+                    .iter()
+                    .find(|c| Some(&c.id) == f.channel.as_ref())
+                    .map_or("No channel", |c| c.title.as_str()),
+            )
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut f.channel, None, "No channel");
+                for c in &f.channels {
+                    ui.selectable_value(&mut f.channel, Some(c.id.clone()), &c.title);
+                }
+            });
+        ui.label(muted(
+            "The video keeps a snapshot of its channel guides; its Vision can vary by episode.",
+        ));
         field_label(ui, "Series (optional)");
         ui.add(
             egui::TextEdit::singleline(&mut f.series)
@@ -700,6 +742,9 @@ fn preview(f: &NewProjectForm, ui: &mut egui::Ui) {
         ("├ script/script.md".into(), theme::TEXT_2),
         ("├ links.json".into(), theme::TEXT_2),
     ];
+    if f.channel.is_some() {
+        rows.push(("├ channel.md  (channel guides)".into(), theme::CUE_VISION));
+    }
     for (folder, on) in &f.folders {
         if *on {
             rows.push((format!("├ {}/", folder.path), theme::CUE_CLIP));
@@ -753,11 +798,39 @@ mod tests {
         let custom = spearfia_core::visions::Vision::parse(r#"{"name":"science","goal":"Explain clearly","weights":{"diagram":0.9},"script_rules":["Use examples"]}"#).unwrap();
         let mut templates = spearfia_vision::builtin_templates();
         templates.push(custom.clone());
-        let mut form = NewProjectForm::new(Some(std::env::temp_dir()), None, templates);
+        let mut form = NewProjectForm::new(Some(std::env::temp_dir()), None, templates, Vec::new());
         form.name = "Vision test".into();
         form.preset = Some("science".into());
         let request = form.to_spec().unwrap();
         assert_eq!(request.vision.extends.as_deref(), Some("science"));
         assert_eq!(request.vision.template, Some(custom.document));
+    }
+    #[test]
+    fn chosen_channel_embeds_saved_guides_in_new_video_request() {
+        let dir = std::env::temp_dir().join(format!(
+            "spearfia-new-channel-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let channel = spearfia_core::channels::create(&dir, "Channel test").unwrap();
+        channel
+            .add_document("analysis.md", "# Analysis\nUse recurring diagrams.")
+            .unwrap();
+        let mut form = NewProjectForm::new(
+            Some(dir.clone()),
+            None,
+            spearfia_vision::builtin_templates(),
+            vec![channel.clone()],
+        );
+        form.name = "Episode one".into();
+        form.choose_channel(&channel.id).unwrap();
+        let request = form.to_spec().unwrap();
+        let brief = request.channel_brief.unwrap();
+        assert!(brief.contains("Channel test") && brief.contains("Use recurring diagrams."));
+        assert!(form.choose_channel("missing").is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -62,3 +62,20 @@ has a namespaced ID (`spearfia/<asset>@<semver>`), a required license, a source 
 The script is a plain `script.md` (see `spearfia-spec/docs/script-directives.md`). Spear Fia
 watches it for external edits and writes it back round-trip safe: text it did not change
 stays byte-for-byte the same. Lives in `spearfia-script`.
+
+## Channel knowledge and creator approval
+
+Channel guides are shared Markdown in the app config's `channels/<id>/` folders. A
+video gets a `channel.md` snapshot of those guides, independent of its Vision, so later
+channel lessons do not silently change an in-progress brief. These are ordinary Markdown
+documents, with no change to the project JSON schema. The core channel operations back
+both the desktop editor and read-only CLI; stale saves and oversized inputs are rejected.
+
+The creator's approval records the exact saved script and channel brief in
+`sync/approved-script.md` and `sync/approved-channel.md`. Production handoff compares the
+current content with both records and refuses changed or unapproved content. Agents
+can read/check the handoff but have no CLI approval operation. This is a local workflow
+gate, not a security boundary against arbitrary filesystem writes.
+
+See [agents.md](agents.md) for implemented agent entry points and the current boundaries
+of the MCP/API, generation and FilmCraft sync scaffolds.

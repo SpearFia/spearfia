@@ -221,6 +221,9 @@ impl Project {
                 self.vision_path(),
                 self.root.join(PROJECT_FILE),
                 self.root.join(crate::links::LINKS_FILE),
+                self.root.join(crate::channels::PROJECT_BRIEF),
+                self.root.join("sync/approved-script.md"),
+                self.root.join("sync/approved-channel.md"),
             ]);
         if protected.into_iter().any(|p| {
             p.starts_with(&src) || canonical(&p).ok().is_some_and(|p| p.starts_with(&src_real))
@@ -584,6 +587,18 @@ mod tests {
                 .is_err()
         );
         assert_eq!(fs::read(p.script_path()).unwrap(), b"my script");
+        fs::create_dir_all(p.root.join("sync")).unwrap();
+        fs::write(p.root.join("sync/approved-script.md"), b"approved").unwrap();
+        p.add_media_folder(&p.root.join("sync"), MediaRole::Other)
+            .unwrap();
+        assert!(
+            p.move_media("sync", "B-roll", &mut Links::default())
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(p.root.join("sync/approved-script.md")).unwrap(),
+            b"approved"
+        );
         fs::write(p.root.join("B-roll/a.mp4"), b"video").unwrap();
         let absolute = p
             .root
