@@ -16,6 +16,7 @@ mod media_ops;
 pub mod project;
 pub mod tabs;
 pub mod visions;
+pub mod visuals;
 
 pub use error::CoreError;
 

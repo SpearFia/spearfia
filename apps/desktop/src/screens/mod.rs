@@ -14,4 +14,5 @@ pub mod sfx_stage;
 pub mod timeline;
 pub mod transitions_stage;
 pub mod vision_catalog;
+pub mod visual_stage;
 pub mod workspace;

@@ -19,13 +19,17 @@ pub struct Tab {
 impl Project {
     /// The main script first, then the other `.md` files next to it, A–Z.
     pub fn tabs(&self) -> Vec<Tab> {
-        let main = self.file.script.replace('\\', "/");
+        self.document_tabs(&self.file.script, self.name())
+    }
+
+    pub fn document_tabs(&self, main: &str, title: &str) -> Vec<Tab> {
+        let main = main.replace('\\', "/");
         let dir = Path::new(&main)
             .parent()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
         let mut tabs = vec![Tab {
-            name: self.name().to_owned(),
+            name: title.to_owned(),
             rel: main.clone(),
             main: true,
         }];
@@ -64,6 +68,10 @@ impl Project {
 
     /// Create a new tab next to the main script and return its path.
     pub fn new_tab(&self, name: &str) -> Result<String> {
+        self.new_document_tab(&self.file.script, name)
+    }
+
+    pub fn new_document_tab(&self, main: &str, name: &str) -> Result<String> {
         let clean: String = name
             .trim()
             .chars()
@@ -78,7 +86,7 @@ impl Project {
         if clean.trim().is_empty() {
             return Err(CoreError::Invalid("Give the tab a name.".into()));
         }
-        let main = self.file.script.replace('\\', "/");
+        let main = main.replace('\\', "/");
         let dir = Path::new(&main)
             .parent()
             .map(|p| p.to_string_lossy().replace('\\', "/"))

@@ -38,6 +38,7 @@ use std::ops::Range;
 pub enum ScriptEvent {
     /// Open the Media stage's script view with these words highlighted, ready for a clip.
     LinkClip(Selection),
+    OpenNarration(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,6 +312,7 @@ fn all_cmds() -> Vec<Cmd> {
         Cmd::Suggest,
     ];
     v.extend(Style::ALL.map(Cmd::Style));
+    v.extend(spearfia_core::visuals::Role::ALL.map(|r| Cmd::Style(Style::Visual(r))));
     v.extend([
         Cmd::List(List::Bullet),
         Cmd::List(List::Numbered),
@@ -365,18 +367,37 @@ struct Buf {
     error: Option<String>,
     /// The file couldn't be read, so `source` is empty, not the document: never save it.
     load_failed: bool,
+    saved: String,
+}
+
+fn parse_document(source: &str, visual: bool) -> Script {
+    let mut parsed = spearfia_script::parse(source);
+    if visual {
+        for block in &mut parsed.blocks {
+            if let Block::Line { kind, .. } = block {
+                *kind = spearfia_script::LineKind::Note;
+            }
+        }
+    }
+    parsed
 }
 
 impl Buf {
     fn load(project: &Project, rel: &str, main: bool) -> Self {
-        let (source, error) = match project.read_doc(rel) {
+        let read = if rel == spearfia_core::visuals::FILE {
+            project.read_visuals()
+        } else {
+            project.read_doc(rel)
+        };
+        let (source, error) = match read {
             Ok(s) => (s, None),
             Err(e) => (String::new(), Some(e.to_string())),
         };
         Self {
             rel: rel.to_owned(),
             main,
-            parsed: spearfia_script::parse(&source),
+            parsed: parse_document(&source, rel.starts_with("visuals/")),
+            saved: source.clone(),
             source,
             dirty: false,
             last_edit: 0.0,
@@ -386,7 +407,7 @@ impl Buf {
     }
 
     fn changed(&mut self, now: f64) {
-        self.parsed = spearfia_script::parse(&self.source);
+        self.parsed = parse_document(&self.source, self.rel.starts_with("visuals/"));
         self.dirty = true;
         self.last_edit = now;
     }
@@ -399,8 +420,23 @@ impl Buf {
             ));
             return;
         }
-        match project.write_doc(&self.rel, &self.source) {
+        let disk = if self.rel == spearfia_core::visuals::FILE {
+            project.read_visuals()
+        } else {
+            project.read_doc(&self.rel)
+        };
+        if disk.as_ref().ok() != Some(&self.saved) {
+            self.error = Some("This document changed on disk or cannot be read. Copy your draft, then reload before saving.".into());
+            return;
+        }
+        let result = if self.rel == spearfia_core::visuals::FILE {
+            project.write_visuals(&self.saved, &self.source)
+        } else {
+            project.write_doc(&self.rel, &self.source)
+        };
+        match result {
             Ok(()) => {
+                self.saved = self.source.clone();
                 self.dirty = false;
                 self.error = None;
             }
@@ -462,7 +498,7 @@ fn slash_items() -> Vec<SlashItem> {
         color,
         action,
     };
-    vec![
+    let mut items = vec![
         i(
             "Chapter card",
             "template look",
@@ -562,10 +598,22 @@ fn slash_items() -> Vec<SlashItem> {
             theme::ACCENT,
             A::Comment,
         ),
-    ]
+    ];
+    items.extend(spearfia_core::visuals::Role::ALL.map(|role| {
+        i(
+            role.label(),
+            "non-spoken visual paragraph",
+            Icon::Eye,
+            theme::CUE_VISION,
+            A::Style(Style::Visual(role)),
+        )
+    }));
+    items
 }
 
 pub struct ScriptStage {
+    visual: bool,
+    last_disk_check: f64,
     main: Buf,
     side: Option<Buf>,
     tabs: Vec<Tab>,
@@ -607,21 +655,36 @@ pub struct ScriptStage {
 
 impl ScriptStage {
     pub fn load(project: &Project) -> Self {
+        Self::load_document(project, &project.file.script, false)
+    }
+    pub fn load_visual(project: &Project) -> Self {
+        Self::load_document(project, spearfia_core::visuals::FILE, true)
+    }
+    fn load_document(project: &Project, path: &str, visual: bool) -> Self {
         crate::fonts::set_project(&project.root);
-        let main_rel = project.file.script.replace('\\', "/");
+        let main_rel = path.replace('\\', "/");
         let (comments, comments_error) = match Comments::load(project) {
             Ok(c) => (c, None),
             Err(e) => (Comments::default(), Some(e.to_string())),
         };
         Self {
-            main: Buf::load(project, &main_rel, true),
+            visual,
+            last_disk_check: -10.0,
+            main: Buf::load(project, &main_rel, !visual),
             side: None,
-            tabs: project.tabs(),
+            tabs: project.document_tabs(
+                &main_rel,
+                if visual {
+                    "Visual Script"
+                } else {
+                    project.name()
+                },
+            ),
             view: View::Paged,
             mode: Mode::Editing,
             zoom: 1.0,
-            show_tabs: true,
-            show_comments: true,
+            show_tabs: !visual,
+            show_comments: !visual,
             comments,
             comments_error,
             composer: None,
@@ -685,6 +748,81 @@ impl ScriptStage {
         Id::new(("script-editor", self.buf().rel.clone()))
     }
 
+    fn styles(&self) -> Vec<Style> {
+        if self.visual {
+            Style::VISUAL.to_vec()
+        } else {
+            Style::ALL.to_vec()
+        }
+    }
+    pub fn refresh_external(&mut self, project: &Project, now: f64) {
+        if now - self.last_disk_check < 1.0 {
+            return;
+        }
+        self.last_disk_check = now;
+        for b in std::iter::once(&mut self.main).chain(self.side.as_mut()) {
+            if !b.dirty && !b.load_failed {
+                let disk = if b.rel == spearfia_core::visuals::FILE {
+                    project.read_visuals()
+                } else {
+                    project.read_doc(&b.rel)
+                };
+                if let Ok(source) = disk
+                    && source != b.saved
+                {
+                    b.source = source.clone();
+                    b.saved = source;
+                    b.parsed = parse_document(&b.source, self.visual);
+                }
+            }
+        }
+    }
+    pub fn caret(&self) -> usize {
+        self.caret
+    }
+    pub fn selected_range(&self) -> Option<Range<usize>> {
+        (!self.sel.is_empty() && self.side.is_none()).then(|| self.sel.clone())
+    }
+    pub fn focus_range(&mut self, range: Range<usize>) {
+        if self.side.as_ref().is_some_and(|b| b.dirty) {
+            return;
+        }
+        self.side = None;
+        self.scroll_to = Some(format::line_of(&self.main.source, range.start));
+        self.pending_sel = Some(range);
+    }
+    pub fn flush(&mut self, project: &Project) -> Result<(), String> {
+        for b in std::iter::once(&mut self.main).chain(self.side.as_mut()) {
+            if b.dirty {
+                b.save(project);
+                if let Some(error) = &b.error {
+                    return Err(error.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn change_document(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        source: String,
+    ) -> Result<(), String> {
+        self.flush(project)?;
+        self.side = None;
+        let id = self.editor_id();
+        let mut state = TextEditState::load(ctx, id).unwrap_or_default();
+        let mut undo = state.undoer();
+        let cursor = state.cursor.char_range().unwrap_or_default();
+        undo.add_undo(&(cursor, self.main.source.clone()));
+        undo.add_undo(&(cursor, source.clone()));
+        state.set_undoer(undo);
+        state.store(ctx, id);
+        self.main.source = source;
+        self.main.changed(ctx.input(|i| i.time));
+        self.main.save(project);
+        self.main.error.clone().map_or(Ok(()), Err)
+    }
     fn can_edit(&self) -> bool {
         self.mode == Mode::Editing
     }
@@ -696,6 +834,10 @@ impl ScriptStage {
         ui: &mut egui::Ui,
     ) -> Option<ScriptEvent> {
         let now = ui.input(|i| i.time);
+        if let Ok(comments) = Comments::load(project) {
+            self.comments = comments;
+        }
+        self.refresh_external(project, now);
         // Autosave a second after typing stops.
         for b in std::iter::once(&mut self.main).chain(self.side.as_mut()) {
             if b.dirty && now - b.last_edit > 1.0 {
@@ -757,6 +899,12 @@ impl ScriptStage {
         }
         if !focused {
             return;
+        }
+        if take(Modifiers::COMMAND, Key::Z) {
+            cmds.push(Cmd::Undo);
+        }
+        if take(Modifiers::COMMAND, Key::Y) || take(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z) {
+            cmds.push(Cmd::Redo);
         }
         let ctrl_alt = Modifiers::COMMAND | Modifiers::ALT;
         let ctrl_shift = Modifiers::COMMAND | Modifiers::SHIFT;
@@ -904,6 +1052,10 @@ impl ScriptStage {
     fn title(&mut self, ui: &mut egui::Ui, project: &Project) {
         let b = self.buf();
         if !b.main {
+            if self.visual && self.side.is_none() {
+                ui.label(text("Visual Script", 16.0, theme::TEXT));
+                return;
+            }
             ui.label(text(
                 b.rel
                     .rsplit('/')
@@ -1017,7 +1169,7 @@ impl ScriptStage {
             });
             ui.menu_button("Format", |ui| {
                 ui.menu_button("Paragraph style", |ui| {
-                    for s in Style::ALL {
+                    for s in self.styles() {
                         item(ui, Cmd::Style(s), cmds, editing);
                     }
                 });
@@ -1123,9 +1275,12 @@ impl ScriptStage {
                         });
                     sep(ui);
                     let line = format::line_of(&self.buf().source, self.caret);
-                    let current = format::line_range(&self.buf().source, line)
+                    let mut current = format::line_range(&self.buf().source, line)
                         .map(|r| format::style_of(&self.buf().source[r]))
                         .unwrap_or(Style::Vo);
+                    if self.visual && current == Style::Vo {
+                        current = Style::Visual(spearfia_core::visuals::Role::Visual);
+                    }
                     ui.add_enabled_ui(editing, |ui| {
                         egui::ComboBox::from_id_salt("doc-style")
                             .width(118.0)
@@ -1135,7 +1290,7 @@ impl ScriptStage {
                             )
                             .show_ui(ui, |ui| {
                                 ui.set_min_width(230.0);
-                                for s in Style::ALL {
+                                for s in self.styles() {
                                     let r = ui.selectable_label(current == s, style_preview(s));
                                     if r.clicked() {
                                         cmds.push(Cmd::Style(s));
@@ -1497,9 +1652,16 @@ impl ScriptStage {
                 ui.add(egui::TextEdit::singleline(name).hint_text("Tab name, e.g. Series bible"));
             r.request_focus();
             if ui.input(|i| i.key_pressed(Key::Enter)) {
-                match project.new_tab(name) {
+                match project.new_document_tab(&self.main.rel, name) {
                     Ok(rel) => {
-                        self.tabs = project.tabs();
+                        self.tabs = project.document_tabs(
+                            &self.main.rel,
+                            if self.visual {
+                                "Visual Script"
+                            } else {
+                                project.name()
+                            },
+                        );
                         open = Some(rel);
                     }
                     Err(e) => self.buf_mut().error = Some(e.to_string()),
@@ -1556,7 +1718,7 @@ impl ScriptStage {
                                             .truncate(),
                                     );
                                 });
-                                if t.main {
+                                if t.main && !self.visual {
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                         ui.label(mono(
                                             widgets::mmss(self.main.parsed.est_seconds()),
@@ -1584,6 +1746,9 @@ impl ScriptStage {
     fn open_tab(&mut self, project: &Project, rel: &str) {
         if self.buf().dirty {
             self.buf_mut().save(project);
+            if self.buf().dirty {
+                return;
+            }
         }
         self.side = if rel == self.main.rel {
             None
@@ -1709,7 +1874,11 @@ impl ScriptStage {
                 Block::Divider { .. } => 0,
             })
             .sum();
-        let spoken: usize = b.parsed.outline().iter().map(|s| s.spoken_words).sum();
+        let spoken: usize = if self.visual {
+            0
+        } else {
+            b.parsed.outline().iter().map(|s| s.spoken_words).sum()
+        };
         let line = format::line_of(&b.source, self.caret);
         let line_start = format::line_range(&b.source, line).map_or(0, |r| r.start);
         let col = b.source[line_start..self.caret.min(b.source.len()).max(line_start)]
@@ -1725,7 +1894,11 @@ impl ScriptStage {
                 ));
             }
             ui.label(text(
-                format!("{words} words · {spoken} spoken"),
+                if self.visual {
+                    format!("{words} words · non-spoken visual directions")
+                } else {
+                    format!("{words} words · {spoken} spoken")
+                },
                 11.5,
                 theme::TEXT_2,
             ));
@@ -1927,9 +2100,10 @@ impl ScriptStage {
 
         // Page background slot (painted once the height is known).
         let bg = ui.painter().add(egui::Shape::Noop);
+        let visual_document = self.visual;
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _w: f32| {
             let s = buf.as_str();
-            let parsed = spearfia_script::parse(s);
+            let parsed = parse_document(s, visual_document);
             let lines = doc::lines(s, &parsed);
             ui.painter()
                 .layout_job(doc::job(ui.painter(), s, &lines, &marks, look))
@@ -2042,7 +2216,7 @@ impl ScriptStage {
         );
 
         // Margin: VO/LIVE tags, coverage, bullets, checkboxes, section times.
-        let parsed = spearfia_script::parse(&src);
+        let parsed = parse_document(&src, self.visual);
         let lines = doc::lines(&src, &parsed);
         let covered = resolved.as_ref().map(|r| script_view::coverage(&parsed, r));
         let times: Option<HashMap<usize, String>> = self.buf().main.then(|| {
@@ -2083,6 +2257,50 @@ impl ScriptStage {
                 let b = self.buf_mut();
                 b.source = format::toggle_check(&b.source, line);
                 b.changed(now);
+            }
+        }
+
+        if self.visual
+            && let Ok(plan) = spearfia_core::visuals::Plan::parse(&src)
+        {
+            for cue in &plan.cues {
+                let rows = doc::rows_rect(&galley, gpos, &idx, &cue.record);
+                let rect = Rect::from_min_size(pos2(origin.x, rows.top()), vec2(text_w, 42.0 * z));
+                let excerpt = format!(
+                    "Linked narration · {} · {}",
+                    cue.meta.anchor.kind,
+                    cue.meta.anchor.quote.replace('\n', " ")
+                );
+                let details = format!(
+                    "{} · {} · {} · {}",
+                    cue.meta.visual_type, cue.meta.method, cue.meta.asset_state, cue.meta.review
+                );
+                let painter = ui.painter().with_clip_rect(rect);
+                painter.text(
+                    rect.left_top(),
+                    Align2::LEFT_TOP,
+                    excerpt,
+                    FontId::proportional(10.5 * z),
+                    theme::CUE_VO,
+                );
+                painter.text(
+                    rect.left_top() + vec2(0.0, 17.0 * z),
+                    Align2::LEFT_TOP,
+                    details,
+                    FontId::proportional(9.5 * z),
+                    theme::TEXT_MUTED,
+                );
+                if ui
+                    .interact(
+                        rect,
+                        Id::new(("visual-excerpt", &cue.meta.id)),
+                        Sense::click(),
+                    )
+                    .on_hover_text("Open linked narration in Script")
+                    .clicked()
+                {
+                    self.event = Some(ScriptEvent::OpenNarration(cue.meta.id.clone()));
+                }
             }
         }
 
@@ -2522,7 +2740,14 @@ impl ScriptStage {
                 let rel = self.buf().rel.clone();
                 let main = self.buf().main;
                 *self.buf_mut() = Buf::load(project, &rel, main);
-                self.tabs = project.tabs();
+                self.tabs = project.document_tabs(
+                    &self.main.rel,
+                    if self.visual {
+                        "Visual Script"
+                    } else {
+                        project.name()
+                    },
+                );
             }
             Cmd::NewTab => {
                 self.show_tabs = true;
@@ -2539,12 +2764,24 @@ impl ScriptStage {
                     return;
                 };
                 let mut u = st.undoer();
-                let cur = (st.cursor.char_range().unwrap_or_default(), src.clone());
-                let prev = if cmd == Cmd::Undo {
-                    u.undo(&cur).cloned()
-                } else {
-                    u.redo(&cur).cloned()
-                };
+                let mut current = (st.cursor.char_range().unwrap_or_default(), src.clone());
+                let mut prev = None;
+                // Cursor-only undo points should never consume a document undo action.
+                for _ in 0..512 {
+                    let step = if cmd == Cmd::Undo {
+                        u.undo(&current).cloned()
+                    } else {
+                        u.redo(&current).cloned()
+                    };
+                    let Some(step) = step else {
+                        break;
+                    };
+                    if step.1 != src {
+                        prev = Some(step);
+                        break;
+                    }
+                    current = step;
+                }
                 if let Some((range, text)) = prev {
                     st.cursor.set_char_range(Some(range));
                     let b = self.buf_mut();
@@ -3123,10 +3360,18 @@ impl ScriptStage {
                     Block::Divider { .. } => 0,
                 })
                 .sum();
-            let spoken: usize = b.parsed.outline().iter().map(|s| s.spoken_words).sum();
+            let spoken: usize = if self.visual {
+                0
+            } else {
+                b.parsed.outline().iter().map(|s| s.spoken_words).sum()
+            };
             let chars = b.source.chars().filter(|c| !c.is_whitespace()).count();
             let cues = edit::directives(&b.parsed).count();
-            let est = widgets::mmss(b.parsed.est_seconds());
+            let est = if self.visual {
+                "From linked narration (see cue panel)".into()
+            } else {
+                widgets::mmss(b.parsed.est_seconds())
+            };
             egui::Window::new("Word count")
                 .open(&mut self.word_count)
                 .resizable(false)
@@ -3759,5 +4004,60 @@ mod tests {
             set_front_matter("x\n", "title", "B"),
             "---\ntitle: B\n---\nx\n"
         );
+    }
+}
+
+#[cfg(test)]
+mod visual_document_tests {
+    use super::*;
+    #[test]
+    fn structured_edit_undo_skips_cursor_only_states() {
+        let root =
+            std::env::temp_dir().join(format!("spearfia-visual-undo-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let project = Project {
+            root: root.clone(),
+            file: serde_json::from_str(r#"{"name":"Test","spec_version":1,"adapter":"filmcraft"}"#)
+                .unwrap(),
+        };
+        let ctx = egui::Context::default();
+        let mut editor = ScriptStage::load_visual(&project);
+        let original = editor.source().to_owned();
+        editor
+            .change_document(&ctx, &project, "# Visual Script\n\n## New cue\n".into())
+            .unwrap();
+        let id = editor.editor_id();
+        let mut state = TextEditState::load(&ctx, id).unwrap();
+        let cursor = CCursorRange::one(CCursor::new(5));
+        let mut undo = state.undoer();
+        undo.add_undo(&(cursor, editor.source().to_owned()));
+        state.cursor.set_char_range(Some(cursor));
+        state.set_undoer(undo);
+        state.store(&ctx, id);
+        editor.run(&ctx, &project, Cmd::Undo);
+        assert_eq!(editor.source(), original);
+        editor.run(&ctx, &project, Cmd::Redo);
+        assert!(editor.source().contains("New cue"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn all_visual_prose_is_non_spoken_including_unprefixed_text() {
+        let parsed = parse_document(
+            "# Visual Script\n## Scene\nA long unprefixed visual instruction.\nLIVE: This is still visual prose here.\nVISUAL: A composition.\nPROMPT: Generate the artwork.\n",
+            true,
+        );
+        assert_eq!(parsed.est_seconds(), 0.0);
+        assert!(
+            parsed
+                .blocks
+                .iter()
+                .all(|b| !matches!(b, Block::Line { kind, .. } if kind.is_spoken()))
+        );
+        let styled = format::set_style(
+            "",
+            0..1,
+            Style::Visual(spearfia_core::visuals::Role::Prompt),
+        );
+        assert_eq!(styled, "PROMPT: ");
     }
 }

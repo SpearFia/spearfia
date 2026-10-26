@@ -222,6 +222,7 @@ impl Project {
                 self.root.join(PROJECT_FILE),
                 self.root.join(crate::links::LINKS_FILE),
                 self.root.join(crate::channels::PROJECT_BRIEF),
+                self.root.join(crate::visuals::FILE),
                 self.root.join("sync/approved-script.md"),
                 self.root.join("sync/approved-channel.md"),
             ]);

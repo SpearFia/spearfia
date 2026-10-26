@@ -20,6 +20,7 @@ use spearfia_core::project::Project;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Script,
+    VisualScript,
     Media,
     Transitions,
     Effects,
@@ -29,8 +30,9 @@ pub enum Stage {
 }
 
 impl Stage {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Script,
+        Self::VisualScript,
         Self::Media,
         Self::Transitions,
         Self::Effects,
@@ -42,6 +44,7 @@ impl Stage {
     pub fn label(self) -> &'static str {
         match self {
             Self::Script => "Script",
+            Self::VisualScript => "Visual Script",
             Self::Media => "Media",
             Self::Effects => "Effects",
             Self::Music => "Music",
@@ -54,7 +57,7 @@ impl Stage {
     /// What the stage will do, shown until it is built.
     fn plan(self) -> &'static str {
         match self {
-            Self::Script => "",
+            Self::Script | Self::VisualScript => "",
             Self::Media => {
                 "Link the project folders (A-roll, B-roll, Screen, Graphics), browse clips in a grid, \
                 or switch to the script view: highlight words, keep the highlight, and drop a clip on it."
@@ -88,6 +91,8 @@ pub struct Workspace {
     pub project: Project,
     pub stage: Stage,
     pub script: ScriptStage,
+    pub visuals: super::visual_stage::VisualStage,
+    pub document_error: Option<String>,
     pub media: MediaStage,
     pub music: MusicStage,
     pub transitions: TransitionsStage,
@@ -103,6 +108,7 @@ impl Workspace {
     pub fn new(project: Project) -> Self {
         let script = ScriptStage::load(&project);
         let media = MediaStage::new(&project);
+        let visuals = super::visual_stage::VisualStage::new(&project);
         let (links, links_error) = match Links::load(&project) {
             Ok(l) => (l, None),
             Err(e) => (Links::default(), Some(e.to_string())),
@@ -111,6 +117,8 @@ impl Workspace {
             project,
             stage: Stage::Script,
             script,
+            visuals,
+            document_error: None,
             media,
             music: MusicStage::new(),
             transitions: TransitionsStage::new(),
@@ -131,6 +139,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         let View::Workspace(ws) = &mut app.view else {
             return;
         };
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs(1));
+        let now = ui.input(|i| i.time);
+        ws.script.refresh_external(&ws.project, now);
+        ws.visuals.editor.refresh_external(&ws.project, now);
         Panel::top("ws-top")
             .exact_size(44.0)
             .show_separator_line(false)
@@ -173,21 +186,65 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 });
             });
 
+        let previous_stage = ws.stage;
         Panel::bottom("ws-nav")
             .exact_size(60.0)
             .show_separator_line(false)
             .frame(panel(theme::BG_PANEL))
             .show(ui, |ui| nav(ui, &mut ws.stage));
 
+        if (go_home || ws.stage != previous_stage)
+            && let Err(error) = ws
+                .script
+                .flush(&ws.project)
+                .and_then(|()| ws.visuals.editor.flush(&ws.project))
+        {
+            ws.document_error = Some(error);
+            ws.stage = previous_stage;
+            go_home = false;
+        }
+        if let Some(error) = &ws.document_error {
+            Panel::top("document-save-error").show(ui, |ui| {
+                ui.label(widgets::text(error, 12.0, theme::DANGER));
+            });
+        }
         match ws.stage {
             Stage::Script => {
+                Panel::top("script-plan-visuals").show(ui, |ui| {
+                    if ui
+                        .add_enabled(
+                            ws.script.selected_range().is_some(),
+                            egui::Button::new("Plan visuals for selected narration"),
+                        )
+                        .clicked()
+                        && let Some(range) = ws.script.selected_range()
+                    {
+                        ws.visuals.add_for_selection(
+                            &ws.project,
+                            ws.script.source(),
+                            range,
+                            ui.ctx(),
+                        );
+                        ws.stage = Stage::VisualScript;
+                    }
+                });
                 if let Some(ev) = ws.script.show(&ws.project, &ws.links, ui) {
                     match ev {
                         ScriptEvent::LinkClip(sel) => {
                             ws.media.focus_selection(sel);
                             ws.stage = Stage::Media;
                         }
+                        ScriptEvent::OpenNarration(_) => {}
                     }
+                }
+            }
+            Stage::VisualScript => {
+                if let Some(range) = ws
+                    .visuals
+                    .show(&ws.project, ws.script.source(), &ws.links, ui)
+                {
+                    ws.script.focus_range(range);
+                    ws.stage = Stage::Script;
                 }
             }
             Stage::Media => ws.media.show(
@@ -223,8 +280,8 @@ fn nav(ui: &mut egui::Ui, stage: &mut Stage) {
         [full.left_top(), full.right_top()],
         Stroke::new(1.0, theme::BORDER),
     );
-    let item_w = 96.0;
-    let gap = 22.0;
+    let gap = 10.0;
+    let item_w = ((full.width() - gap * 7.0) / 8.0).clamp(60.0, 108.0);
     let total = Stage::ALL.len() as f32 * item_w + (Stage::ALL.len() - 1) as f32 * gap;
     let mut x = full.center().x - total / 2.0;
     for (i, s) in Stage::ALL.into_iter().enumerate() {
@@ -276,7 +333,7 @@ fn stage_icon(p: &egui::Painter, c: egui::Pos2, s: Stage, color: egui::Color32) 
     let st = Stroke::new(1.5, color);
     let r = |w: f32, h: f32| egui::Rect::from_center_size(c, egui::vec2(w, h));
     match s {
-        Stage::Script => {
+        Stage::Script | Stage::VisualScript => {
             p.rect_stroke(r(13.0, 16.0), 2.0, st, egui::StrokeKind::Middle);
             for dy in [-3.0, 0.5, 4.0] {
                 p.line_segment([c + egui::vec2(-3.5, dy), c + egui::vec2(3.5, dy)], st);

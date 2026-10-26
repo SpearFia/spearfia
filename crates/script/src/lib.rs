@@ -120,7 +120,9 @@ pub fn is_note(trimmed: &str) -> bool {
         let digits = trimmed.bytes().take_while(u8::is_ascii_digit).count();
         digits > 0 && trimmed[digits..].starts_with(". ")
     };
-    trimmed.starts_with("> ")
+    spearfia_core::visuals::Role::of(trimmed).is_some()
+        || trimmed.starts_with("<!-- visual-cue ")
+        || trimmed.starts_with("> ")
         || trimmed == ">"
         || trimmed.starts_with("- ")
         || trimmed.starts_with("* ")

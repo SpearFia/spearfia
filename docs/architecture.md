@@ -79,3 +79,7 @@ gate, not a security boundary against arbitrary filesystem writes.
 
 See [agents.md](agents.md) for implemented agent entry points and the current boundaries
 of the MCP/API, generation and FilmCraft sync scaffolds.
+
+## Visual Script
+
+Optional `visuals/visuals.md` holds visual directions with stable cue IDs, narration anchors, production methods, references and independent asset/review states. The desktop reuses the document editor. Core operations preserve unknown prose/metadata and back read-only CLI exports. See [the Visual Script guide](visual-script.md) for current behavior and revision handling.

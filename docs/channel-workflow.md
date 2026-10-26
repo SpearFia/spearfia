@@ -44,7 +44,7 @@ The project remains readable without the original channel library.
 
 ## Draft, review, approve, hand off
 
-1. Read the channel guides, the video's `channel.md`, its Vision and current script.
+1. Read the channel guides, the video's `channel.md`, its Vision and current script. If present, read `visuals/visuals.md` and use the [Visual Script exports](visual-script.md) to plan production; resolve stale narration attachments before generating.
 2. Draft and revise the script. Use **Copy drafting brief** to pass context to an agent.
    This is planning only; it does not authorize media generation or timeline assembly.
 3. Review the actual script in Spear Fia and let it save. Open **Channel / handoff** and

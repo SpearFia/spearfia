@@ -19,6 +19,7 @@ pub enum Style {
     Live,
     OnScreen,
     Note,
+    Visual(spearfia_core::visuals::Role),
 }
 
 impl Style {
@@ -33,6 +34,20 @@ impl Style {
         Self::Note,
     ];
 
+    pub const VISUAL: [Self; 11] = [
+        Self::Title,
+        Self::Heading1,
+        Self::Heading2,
+        Self::Heading3,
+        Self::Visual(spearfia_core::visuals::Role::Visual),
+        Self::Visual(spearfia_core::visuals::Role::Action),
+        Self::Visual(spearfia_core::visuals::Role::Text),
+        Self::Visual(spearfia_core::visuals::Role::Graphic),
+        Self::Visual(spearfia_core::visuals::Role::Prompt),
+        Self::Visual(spearfia_core::visuals::Role::Continuity),
+        Self::Visual(spearfia_core::visuals::Role::Note),
+    ];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Title => "Title",
@@ -43,6 +58,7 @@ impl Style {
             Self::Live => "Live line",
             Self::OnScreen => "On-screen",
             Self::Note => "Note",
+            Self::Visual(role) => role.label(),
         }
     }
 
@@ -64,6 +80,7 @@ impl Style {
             Self::Live => "Ctrl+Alt+L",
             Self::OnScreen => "Ctrl+Alt+O",
             Self::Note => "Ctrl+Alt+N",
+            Self::Visual(_) => "",
         }
     }
 }
@@ -116,6 +133,9 @@ pub fn style_of(line: &str) -> Style {
             _ => Style::Heading3,
         };
     }
+    if let Some(role) = spearfia_core::visuals::Role::of(t) {
+        return Style::Visual(role);
+    }
     match kind_prefix(t) {
         Some((LineKind::Live, _)) => return Style::Live,
         Some(_) => return Style::Vo,
@@ -136,6 +156,13 @@ fn strip_style(line: &str) -> String {
     let hashes = t.bytes().take_while(|&b| b == b'#').count();
     if hashes > 0 && t[hashes..].starts_with(' ') {
         return t[hashes..].trim_start().to_owned();
+    }
+    if let Some(role) = spearfia_core::visuals::Role::of(t) {
+        return t
+            .strip_prefix(role.prefix())
+            .unwrap_or(t)
+            .trim_start()
+            .to_owned();
     }
     if let Some((_, n)) = kind_prefix(t) {
         return t[n..].to_owned();
@@ -166,6 +193,7 @@ fn with_style(text: &str, style: Style) -> String {
         Style::Vo => text.to_owned(),
         Style::Live => format!("LIVE: {text}"),
         Style::Note => format!("> {text}"),
+        Style::Visual(role) => format!("{} {text}", role.prefix()),
         Style::OnScreen => {
             // Keep cues after the bracket: `[ON SCREEN: x] :sfx[...]`.
             let cut = text.find(" :").unwrap_or(text.len());
@@ -176,13 +204,20 @@ fn with_style(text: &str, style: Style) -> String {
 
 /// Apply a paragraph style to every line in `lines` (line numbers).
 pub fn set_style(src: &str, lines: Range<usize>, style: Style) -> String {
-    map_lines(src, lines, |l| {
-        if l.trim().is_empty() {
+    let trailing = matches!(style, Style::Visual(_))
+        && (src.is_empty() || src.ends_with('\n'))
+        && lines.contains(&src.split_inclusive('\n').count());
+    let mut out = map_lines(src, lines, |l| {
+        if l.trim().is_empty() && !matches!(style, Style::Visual(_)) {
             return l.to_owned();
         }
         let lead = &l[..l.len() - l.trim_start().len()];
         format!("{lead}{}", with_style(&strip_style(l), style))
-    })
+    });
+    if trailing {
+        out.push_str(&with_style("", style));
+    }
+    out
 }
 
 /// Toggle a list marker on every line in `lines`.

@@ -23,3 +23,9 @@ Imported guides are context, never proof of approval. Agents must not create or 
 approval snapshots to authorize themselves. Discover real ComfyUI, VoiceStudio and
 FilmCraft connections before using them. Report missing integrations instead of claiming
 production succeeded. MCP/API transports and FilmCraft sync remain scaffolds.
+
+## Visual planning exports
+
+Read [Visual Script](visual-script.md) and `visuals/visuals.md` alongside narration.
+Use `spearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>`.
+Handoff requires current creator approval and resolved narration attachments.
