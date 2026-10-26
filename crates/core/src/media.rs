@@ -6,7 +6,7 @@ use crate::project::{MediaFolder, MediaRole, Project};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const MAX_DEPTH: usize = 6;
+pub(crate) const MAX_DEPTH: usize = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaKind {
@@ -98,6 +98,13 @@ pub fn scan(project: &Project) -> Vec<FolderNode> {
             tops.push((top, f.role));
         }
     }
+    // A recorded outside subfolder keeps its role without appearing as a second tree.
+    let roots = tops.clone();
+    tops.retain(|(path, _)| {
+        !roots
+            .iter()
+            .any(|(other, _)| other != path && Path::new(path).starts_with(other))
+    });
     tops.into_iter()
         .map(|(top, role)| {
             let abs = project.resolve(&top);
@@ -196,6 +203,7 @@ mod tests {
             timebase: Timebase::FPS_60,
             target_runtime_seconds: None,
             vision: NewVision {
+                template: None,
                 extends: None,
                 goal: String::new(),
                 avg_shot_seconds: None,

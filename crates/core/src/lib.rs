@@ -11,8 +11,10 @@ pub mod docx;
 pub mod error;
 pub mod links;
 pub mod media;
+mod media_ops;
 pub mod project;
 pub mod tabs;
+pub mod visions;
 
 pub use error::CoreError;
 

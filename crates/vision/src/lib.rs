@@ -31,7 +31,7 @@ impl Preset {
     }
 }
 
-pub const CUT_STYLES: [&str; 4] = ["jump", "invisible", "rhythmic", "mixed"];
+pub use spearfia_core::visions::CUT_STYLES;
 
 const PRESETS: [Preset; 3] = [
     Preset {
@@ -101,5 +101,55 @@ mod tests {
             preset("chaotic-gaming-comedy").unwrap().weight_map()["zoom-punch"],
             0.9
         );
+    }
+}
+
+/// The built-in templates in the same portable format as imported visions.
+pub fn builtin_templates() -> Vec<spearfia_core::visions::Vision> {
+    builtin_presets().iter().map(|p| spearfia_core::visions::Vision {
+        document: serde_json::json!({
+            "$schema": "https://spearfia.dev/schemas/vision/v1.json",
+            "name": p.name, "title": p.title, "goal": p.goal,
+            "pacing": {"avg_shot_seconds": p.avg_shot_seconds, "max_silence_seconds": p.max_silence_seconds, "cut_style": p.cut_style},
+            "weights": p.weight_map(), "script_rules": [], "avoid": [], "references": []
+        }),
+    }).collect()
+}
+
+/// Custom projects embed their template so they keep working on another computer.
+pub fn project_weights(project: &spearfia_core::project::Project) -> HashMap<String, f32> {
+    if let Ok(file) = std::fs::File::open(project.vision_path()) {
+        use std::io::Read;
+        let mut source = String::new();
+        if file
+            .take(spearfia_core::visions::MAX_BYTES as u64 + 1)
+            .read_to_string(&mut source)
+            .is_ok()
+            && source.len() <= spearfia_core::visions::MAX_BYTES
+            && let Ok(document) = serde_json::from_str::<serde_json::Value>(&source)
+        {
+            return spearfia_core::visions::weights(&document);
+        }
+    }
+    project
+        .vision_preset()
+        .and_then(|name| preset(&name))
+        .map(|p| p.weight_map())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod template_tests {
+    #[test]
+    fn builtin_templates_use_the_import_format_without_losing_weights() {
+        for (template, preset) in super::builtin_templates()
+            .iter()
+            .zip(super::builtin_presets())
+        {
+            let reloaded =
+                spearfia_core::visions::Vision::parse(&template.to_source().unwrap()).unwrap();
+            assert_eq!(reloaded.name(), preset.name);
+            assert_eq!(reloaded.weight_map(), preset.weight_map());
+        }
     }
 }

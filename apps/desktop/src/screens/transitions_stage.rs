@@ -83,11 +83,7 @@ impl TransitionsStage {
         let tl = timing::timeline(&parsed);
         let all = cuts::cuts(&parsed, &tl);
         let resolved = script_view::resolve(&parsed, links);
-        let weights = project
-            .vision_preset()
-            .and_then(|v| spearfia_vision::preset(&v))
-            .map(|p| p.weight_map())
-            .unwrap_or_default();
+        let weights = spearfia_vision::project_weights(project);
         let mut library: Vec<(&Entry, f32)> = catalog
             .entries
             .iter()

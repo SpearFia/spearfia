@@ -6,6 +6,7 @@
 
 mod app;
 mod doc;
+mod file_drop;
 mod fonts;
 mod icons;
 mod screens;
