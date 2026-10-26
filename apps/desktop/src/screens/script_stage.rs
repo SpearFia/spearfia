@@ -661,6 +661,22 @@ impl ScriptStage {
         &self.main.parsed
     }
 
+    /// Save the episode script now if it has unsaved typing, so a command built from the
+    /// file on disk sees what the user sees.
+    pub fn flush(&mut self, project: &Project) -> Result<(), String> {
+        if self.main.dirty {
+            self.main.save(project);
+        }
+        self.main.error.clone().map_or(Ok(()), Err)
+    }
+
+    /// Take text the command layer has already written to disk (no save needed).
+    pub fn adopt(&mut self, text: String) {
+        self.main.source = text;
+        self.main.parsed = spearfia_script::parse(&self.main.source);
+        self.main.dirty = false;
+    }
+
     /// Replace the episode script with an edit made elsewhere (e.g. a cue added on the
     /// Music stage) and save it.
     pub fn apply_edit(&mut self, project: &Project, source: String) -> Result<(), String> {

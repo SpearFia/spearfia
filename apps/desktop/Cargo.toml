@@ -23,3 +23,4 @@ spearfia-catalog.workspace = true
 spearfia-core.workspace = true
 spearfia-script.workspace = true
 spearfia-vision.workspace = true
+spearfia-ops.workspace = true
