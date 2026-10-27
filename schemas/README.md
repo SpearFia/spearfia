@@ -4,7 +4,8 @@ A copy of the schemas from [spearfia-spec](https://github.com/spearfia/spearfia-
 so the app builds and tests against a known version. **Do not edit these files here.**
 Change the schema in `spearfia-spec` first, then update this copy.
 
-Pinned to: `spearfia-spec` initial scaffold (draft v1).
+Pinned to: `spearfia-spec` initial scaffold (draft v1), with `links` and `timeline-plan`
+from branch `feat/links-schema` (`28e5fea`, not merged yet).
 
 ## Updating
 

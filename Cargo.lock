@@ -2972,7 +2972,10 @@ dependencies = [
 name = "spearfia-sync"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "spearfia-core",
+ "spearfia-script",
 ]
 
 [[package]]
