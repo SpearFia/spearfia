@@ -1,0 +1,15 @@
+[package]
+name = "spearfia-ops"
+description = "The command layer: every change to a project as a plan (diff + base version) that is applied atomically, checked against the file on disk, and recorded for undo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+similar = "3.2.0"
+spearfia-core.workspace = true
+spearfia-script.workspace = true

@@ -192,12 +192,14 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`examples/script/script.md`), which `docs/script-directives.md` now documents.
 - Catalog names match whatever the separator: `telemetry overlay` finds `telemetry-overlay`.
 
-- New Project is five steps that open one after another: Basics first, then Continue
-  opens the next once its required fields are filled. Any step opens from its header at
-  any time; finished steps collapse to a one-line summary.
-- Script import takes `.docx` (Word or Google Docs downloads): headings, bold, italic,
-  underline, strike, lists and tables carry over; what doesn't (images, comments) is noted
-  at the top of the script. Imported files without front matter get one.
+- Command layer (`spearfia-ops`): a change is a plan (new text, diff, the version it was
+  made from) that is applied only if the file still has that version, written atomically
+  and recorded in `sync/history.jsonl`. Undo comes from that shared history and refuses
+  to undo over a later edit. First commands: list cuts, set / clear / time a transition,
+  fill every unset section change, and the unset-section-change check.
+- The Transitions stage edits through the command layer and has an Undo button.
+- CLI: `spearfia cuts`, `check`, `transition set|clear|duration|fill`, `undo`, `history`,
+  with `--json`, `--dry-run` (prints the diff) and `--expect <version>`.
 
 ### Fixed
 

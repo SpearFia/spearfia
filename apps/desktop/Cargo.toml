@@ -23,6 +23,7 @@ spearfia-catalog.workspace = true
 spearfia-core.workspace = true
 spearfia-script.workspace = true
 spearfia-vision.workspace = true
+spearfia-ops.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 mouse_position = "0.1.4"
