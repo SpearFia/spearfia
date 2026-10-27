@@ -910,8 +910,10 @@ impl MediaStage {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if widgets::button(ui, "Unlink").clicked() {
-                        links.remove(&id);
-                        self.save(project, links);
+                        self.error = links
+                            .remove_saved(project, &id)
+                            .err()
+                            .map(|e| format!("Couldn't save links.json: {e}"));
                         self.selected_link = None;
                     }
                     if widgets::button(ui, "Show in folder").clicked()
@@ -1047,12 +1049,6 @@ impl MediaStage {
                 self.selected_link = None;
             }
             Err(e) => self.error = Some(format!("Couldn't link the clips: {e}")),
-        }
-    }
-
-    fn save(&mut self, project: &Project, links: &Links) {
-        if let Err(e) = links.save(project) {
-            self.error = Some(format!("Couldn't save links.json: {e}"));
         }
     }
 }

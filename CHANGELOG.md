@@ -9,6 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Agent editing
 
 - Implement project-bound MCP stdio and authenticated local HTTP editing tools for narration and Visual Script, including typed cue operations, revision conflicts, reference binding and bounded undo/redo. Clean agent edits enter desktop undo; production approval remains creator-only.
+- Agents can list project media and add, list and remove media links (`media_list`, `links_list`, `links_add`, `links_remove`). Link saves now start from the saved `links.json` under the project edit lock, so desktop and agent links no longer overwrite each other, and the desktop shows agent links within a second.
 
 ### Visual Script
 

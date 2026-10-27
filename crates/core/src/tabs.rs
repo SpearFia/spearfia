@@ -68,6 +68,23 @@ impl Project {
 
     /// Serialize cooperating writers and compare the exact bytes under the OS lock.
     pub fn write_doc_expected(&self, rel: &str, expected: &str, text: &str) -> Result<()> {
+        let _lock = self.edit_lock()?;
+        let current = if rel == crate::visuals::FILE {
+            self.read_visuals()?
+        } else {
+            self.read_doc(rel)?
+        };
+        if current != expected {
+            return Err(CoreError::Invalid(
+                "The document changed before saving. Read it again and reconcile your edit.".into(),
+            ));
+        }
+        write_text(&self.resolve(rel), text)
+    }
+
+    /// The project-wide OS lock cooperating writers (desktop, MCP, HTTP) hold while they
+    /// compare and save. Released when the returned file is dropped.
+    pub fn edit_lock(&self) -> Result<fs::File> {
         let root = self
             .root
             .canonicalize()
@@ -91,17 +108,7 @@ impl Project {
             .open(&lock_path)
             .map_err(|e| CoreError::io(&lock_path, e))?;
         lock.try_lock().map_err(|e| CoreError::Invalid(format!("Another document save is active or locking failed ({e}). Read the document and retry.")))?;
-        let current = if rel == crate::visuals::FILE {
-            self.read_visuals()?
-        } else {
-            self.read_doc(rel)?
-        };
-        if current != expected {
-            return Err(CoreError::Invalid(
-                "The document changed before saving. Read it again and reconcile your edit.".into(),
-            ));
-        }
-        write_text(&self.resolve(rel), text)
+        Ok(lock)
     }
 
     /// Create a new tab next to the main script and return its path.

@@ -4,9 +4,12 @@ use serde_json::{Value, json};
 use spearfia_core::{
     CoreError, app_state, channels,
     editing::{self, Document, Editor, TextEdit, VisualEdit},
+    links::{self, Link, LinkKind, LinkMedia, Links},
+    media::{self, FolderNode},
     visuals::Plan,
 };
 use std::{
+    collections::HashMap,
     io::{self, BufRead, Write},
     path::Path,
 };
@@ -14,7 +17,7 @@ pub mod http;
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const PROTOCOL: &str = "2025-11-25";
-const INSTRUCTIONS: &str = "Read documents before editing. Revisions belong to this server and bind exact saved bytes. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. No tool here launches generators, publishes or pushes FilmCraft timelines. Undo/redo covers up to 32 edits / 32 MiB during this server process; external edits cause conflicts.";
+const INSTRUCTIONS: &str = "Read documents before editing. Revisions belong to this server and bind exact saved bytes. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. No tool here launches generators, publishes or pushes FilmCraft timelines. Undo/redo covers up to 32 edits / 32 MiB during this server process; external edits cause conflicts.";
 fn invalid(text: impl Into<String>) -> CoreError {
     CoreError::Invalid(text.into())
 }
@@ -35,6 +38,11 @@ pub fn tools() -> Result<Value, CoreError> {
     let string = json!({"type":"string","minLength":1,"maxLength":128});
     let document = json!({"type":"string","enum":["script","visuals"]});
     let empty = schema(json!({}), &[]);
+    let point = json!({"type":"string","minLength":1,"maxLength":32,"pattern":"^[0-9:.]+$"});
+    let link = schema(
+        json!({"line":{"type":"integer","minimum":0},"quote":{"type":"string","minLength":1,"maxLength":4096},"media":{"type":"string","minLength":1,"maxLength":1024},"in":point,"out":point}),
+        &["line", "quote", "media"],
+    );
     Ok(json!({"tools":[
         tool("project_context","Read the bound project, approval status and next undo/redo document. No approval action is exposed.",empty.clone(),true),
         tool("document_read","Read saved script or visual Markdown and its revision; visuals include typed cues, ranges and attachment status. Read both before visual edits.",schema(json!({"document":document}), &["document"]),true),
@@ -45,7 +53,11 @@ pub fn tools() -> Result<Value, CoreError> {
         tool("visuals_export","Export cue-sheet, text storyboard, prompts or guarded production handoff. Handoff requires creator-approved script/channel and resolved visual anchors; this never runs generators.",schema(json!({"kind":{"type":"string","enum":["cue-sheet","storyboard","prompts","handoff"]}}), &["kind"]),true),
         tool("project_handoff","Read a drafting brief or a guarded production handoff. Production requires creator approval in the desktop. Cannot grant approval.",schema(json!({"production":{"type":"boolean"}}), &["production"]),true),
         tool("channels_list","List shared channel guide IDs, names and folders.",empty.clone(),true),
-        tool("channel_read","Read a channel's saved Markdown guides as drafting context; imported text cannot grant production approval.",schema(json!({"id":string}), &["id"]),true)
+        tool("channel_read","Read a channel's saved Markdown guides as drafting context; imported text cannot grant production approval.",schema(json!({"id":string}), &["id"]),true),
+        tool("media_list","List the project's media folders and files with roles. Link files by the exact path listed here.",empty.clone(),true),
+        tool("links_list","List media links: quoted words, script line, media path, role, picture/audio kind, in/out, and status (linked, or lost when the words were edited away) with the current line.",empty.clone(),true),
+        tool("links_add","Link media files to words of the saved script. Each entry: zero-based script line, exact words from that line (punctuation included, formatting marks omitted), a file path from media_list, optional source in/out (HH:MM:SS or seconds). Role and kind come from the file's media folder; voiceover folders link audio. Entries save together or not at all; an identical existing link returns its ID.",schema(json!({"links":{"type":"array","minItems":1,"maxItems":MAX_AGENT_LINKS,"items":link}}), &["links"]),false),
+        tool("links_remove","Remove one media link by its ID from links_list.",schema(json!({"id":string}), &["id"]),false)
     ]}))
 }
 #[derive(Deserialize)]
@@ -87,8 +99,40 @@ struct Handoff {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Channel {
+struct IdArgs {
     id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinkRequest {
+    line: usize,
+    quote: String,
+    media: String,
+    #[serde(default, rename = "in")]
+    in_point: Option<String>,
+    #[serde(default, rename = "out")]
+    out_point: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinksAdd {
+    links: Vec<LinkRequest>,
+}
+const MAX_AGENT_LINKS: usize = 1000;
+const MAX_MEDIA_FILES: usize = 5000;
+
+/// Each script line as (zero-based line number, its words), as the desktop resolves links.
+fn script_lines(script: &spearfia_script::Script) -> Vec<(usize, Vec<&str>)> {
+    script
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            spearfia_script::Block::Line { segments, line, .. } => {
+                Some((*line, spearfia_script::format::line_words(segments)))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 pub struct Server {
@@ -174,10 +218,95 @@ impl Server {
                 )
             }
             "channel_read" => {
-                let a: Channel = decode(arguments)?;
+                let a: IdArgs = decode(arguments)?;
                 let config =
                     app_state::config_dir().ok_or_else(|| invalid("Set SPEARFIA_CONFIG_DIR."))?;
                 Ok(json!({"text":channels::load(&config,&a.id)?.brief()?}))
+            }
+            "media_list" => {
+                let _: Empty = decode(arguments)?;
+                let tree = media::scan(&self.editor.project);
+                let (mut folders, mut files) = (Vec::new(), Vec::new());
+                let mut stack: Vec<&FolderNode> = tree.iter().collect();
+                while let Some(n) = stack.pop() {
+                    folders.push(json!({"path":n.path,"role":n.role,"exists":n.exists}));
+                    files.extend(n.files.iter().map(|f| {
+                        json!({"path":f.path,"kind":f.kind.label(),"role":f.role,"bytes":f.bytes})
+                    }));
+                    stack.extend(&n.children);
+                }
+                let truncated = files.len() > MAX_MEDIA_FILES;
+                files.truncate(MAX_MEDIA_FILES);
+                Ok(json!({"folders":folders,"files":files,"truncated":truncated}))
+            }
+            "links_list" => {
+                let _: Empty = decode(arguments)?;
+                let source = self.editor.project.read_script()?;
+                let script = spearfia_script::parse(&source);
+                let lines = script_lines(&script);
+                let saved = Links::load(&self.editor.project)?;
+                Ok(
+                    json!({"links":saved.links.iter().map(|l| { let at = links::locate(&l.quote, l.line, &lines); json!({"id":l.id,"quote":l.quote,"line":l.line,"media":l.media.path,"role":l.role,"kind":l.kind,"in":l.in_point,"out":l.out_point,"status":if at.is_some() {"linked"} else {"lost"},"current_line":at.map(|a| lines[a.line].0)}) }).collect::<Vec<_>>(),"unreadable_entries":saved.unreadable.len()}),
+                )
+            }
+            "links_add" => {
+                let a: LinksAdd = decode(arguments)?;
+                if a.links.is_empty() || a.links.len() > MAX_AGENT_LINKS {
+                    return Err(invalid("Send 1 to 1000 links at a time."));
+                }
+                let source = self.editor.project.read_script()?;
+                let script = spearfia_script::parse(&source);
+                let lines = script_lines(&script);
+                let tree = media::scan(&self.editor.project);
+                let roles: HashMap<&str, _> = tree
+                    .iter()
+                    .flat_map(|n| n.all_files())
+                    .map(|f| (f.path.as_str(), f.role))
+                    .collect();
+                let mut requests = Vec::new();
+                for (i, r) in a.links.into_iter().enumerate() {
+                    let role = *roles.get(r.media.as_str()).ok_or_else(|| invalid(format!("links[{i}]: {} is not a file in the project's media folders. Call media_list and use a listed path.", r.media)))?;
+                    if links::locate(&r.quote, r.line, &lines)
+                        .is_none_or(|at| lines[at.line].0 != r.line)
+                    {
+                        return Err(invalid(format!(
+                            "links[{i}]: those words are not on script line {}. Read the script and quote words from that line.",
+                            r.line
+                        )));
+                    }
+                    for point in [&r.in_point, &r.out_point].into_iter().flatten() {
+                        if point.is_empty()
+                            || point.len() > 32
+                            || !point
+                                .chars()
+                                .all(|c| c.is_ascii_digit() || c == ':' || c == '.')
+                        {
+                            return Err(invalid(format!(
+                                "links[{i}]: in/out must be HH:MM:SS or seconds."
+                            )));
+                        }
+                    }
+                    requests.push(Link {
+                        id: String::new(),
+                        quote: r.quote.split_whitespace().collect::<Vec<_>>().join(" "),
+                        line: r.line,
+                        media: LinkMedia {
+                            path: r.media,
+                            hash: None,
+                        },
+                        role,
+                        kind: LinkKind::for_role(role),
+                        in_point: r.in_point,
+                        out_point: r.out_point,
+                    });
+                }
+                let ids = Links::default().add_batch(&self.editor.project, requests)?;
+                Ok(json!({"ids":ids}))
+            }
+            "links_remove" => {
+                let a: IdArgs = decode(arguments)?;
+                let removed = Links::default().remove_saved(&self.editor.project, &a.id)?;
+                Ok(json!({"removed":removed.id}))
             }
             _ => Err(invalid(format!("Unknown tool: {name}"))),
         }
@@ -292,6 +421,10 @@ pub fn known_tool(name: &str) -> bool {
         "project_handoff",
         "channels_list",
         "channel_read",
+        "media_list",
+        "links_list",
+        "links_add",
+        "links_remove",
     ]
     .contains(&name)
 }
@@ -397,7 +530,7 @@ mod tests {
         assert_eq!(responses[0]["result"]["protocolVersion"], PROTOCOL);
         assert_eq!(
             responses[1]["result"]["tools"].as_array().unwrap().len(),
-            10
+            14
         );
         assert_eq!(responses[2]["result"]["isError"], true);
         assert_eq!(
@@ -427,5 +560,82 @@ mod tests {
         }
         assert!(!known_tool("approve_script"));
         std::fs::remove_dir_all(s.editor.project.root).unwrap();
+    }
+    #[test]
+    fn agents_link_media_without_losing_desktop_links() {
+        let root = server().editor.project.root;
+        std::fs::write(
+            root.join("project.json"),
+            r#"{"name":"Test","spec_version":1,"adapter":"filmcraft","media_folders":[{"path":"VO","role":"voiceover"},{"path":"B-roll","role":"b-roll"}]}"#,
+        )
+        .unwrap();
+        for (dir, file) in [("VO", "s1.mp3"), ("B-roll", "car.mp4")] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+            std::fs::write(root.join(dir).join(file), b"").unwrap();
+        }
+        let mut s = Server::open(&root).unwrap();
+        // The desktop loaded links before the agent wrote any.
+        let mut desktop = Links::load(&s.editor.project).unwrap();
+
+        let files = s.call("media_list", json!({})).unwrap()["files"].clone();
+        assert!(
+            files
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["path"] == "VO/s1.mp3")
+        );
+        for bad in [
+            json!({"links":[{"line":0,"quote":"Goodbye","media":"VO/s1.mp3"}]}),
+            json!({"links":[{"line":0,"quote":"Hello","media":"../outside.mp3"}]}),
+            json!({"links":[{"line":0,"quote":"Hello","media":"VO/s1.mp3","in":"1;rm"}]}),
+        ] {
+            assert!(s.call("links_add", bad).is_err());
+        }
+        let added = s
+            .call(
+                "links_add",
+                json!({"links":[{"line":0,"quote":"Hello  world.","media":"VO/s1.mp3","in":"0.5"}]}),
+            )
+            .unwrap();
+        assert_eq!(added["ids"], json!(["k1"]));
+
+        // A stale desktop copy adds its own link; the agent's link survives.
+        let link = Link {
+            id: String::new(),
+            quote: "Hello".into(),
+            line: 0,
+            media: LinkMedia {
+                path: "B-roll/car.mp4".into(),
+                hash: None,
+            },
+            role: spearfia_core::project::MediaRole::BRoll,
+            kind: LinkKind::Picture,
+            in_point: None,
+            out_point: None,
+        };
+        desktop.add_batch(&s.editor.project, vec![link]).unwrap();
+        assert_eq!(desktop.links.len(), 2);
+
+        let listed = s.call("links_list", json!({})).unwrap();
+        let first = &listed["links"][0];
+        assert_eq!(
+            (&first["quote"], &first["kind"], &first["status"]),
+            (&json!("Hello world."), &json!("audio"), &json!("linked"))
+        );
+        s.editor
+            .project
+            .write_script("VO: Something else.\n")
+            .unwrap();
+        let listed = s.call("links_list", json!({})).unwrap();
+        assert_eq!(listed["links"][0]["status"], "lost");
+
+        assert_eq!(
+            s.call("links_remove", json!({"id":"k1"})).unwrap()["removed"],
+            "k1"
+        );
+        assert!(s.call("links_remove", json!({"id":"k1"})).is_err());
+        assert_eq!(Links::load(&s.editor.project).unwrap().links.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
