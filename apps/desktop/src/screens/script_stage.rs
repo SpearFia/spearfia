@@ -724,6 +724,13 @@ impl ScriptStage {
         &self.main.parsed
     }
 
+    /// Take text the command layer has already written to disk (no save needed).
+    pub fn adopt(&mut self, text: String) {
+        self.main.source = text;
+        self.main.parsed = spearfia_script::parse(&self.main.source);
+        self.main.dirty = false;
+    }
+
     /// Replace the episode script with an edit made elsewhere (e.g. a cue added on the
     /// Music stage) and save it.
     pub fn apply_edit(&mut self, project: &Project, source: String) -> Result<(), String> {
@@ -799,6 +806,8 @@ impl ScriptStage {
         self.scroll_to = Some(format::line_of(&self.main.source, range.start));
         self.pending_sel = Some(range);
     }
+    /// Save any unsaved typing (episode script and side tab), so a command built from the
+    /// files on disk sees what the user sees.
     pub fn flush(&mut self, project: &Project) -> Result<(), String> {
         for b in std::iter::once(&mut self.main).chain(self.side.as_mut()) {
             if b.dirty {

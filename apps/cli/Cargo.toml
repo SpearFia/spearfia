@@ -12,8 +12,8 @@ name = "spearfia"
 path = "src/main.rs"
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
 spearfia-core.workspace = true
-spearfia-mcp.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
+spearfia-mcp.workspace = true
+spearfia-ops.workspace = true
