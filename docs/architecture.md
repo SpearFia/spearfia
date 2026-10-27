@@ -4,21 +4,22 @@ A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
 
 ## One command layer
 
-The goal is one layer: `spearfia-ops`. A command computes a plan (new text, summary, base
-version); applying it refuses stale writes and records it in `sync/history.jsonl`, so undo
-works the same from the desktop, the CLI or an agent. Transitions are the first commands
-there.
+Every command goes through `spearfia-ops`. A command computes a plan (new text, summary,
+base version). Applying it holds the project edit lock, refuses stale writes and records
+the change in `sync/history.jsonl`, so undo and redo work the same from the desktop, the
+CLI or an agent, across processes and restarts. Undo and redo refuse to run over a later
+edit. The history keeps the newest 100 changes (32 MiB).
 
-Not there yet:
+- Transitions (desktop, CLI) and media links (desktop, MCP/HTTP) are `ops` commands.
+- MCP/HTTP Script and Visual Script edits are validated by `spearfia-core::editing` (paths,
+  ranges, cue operations), which returns a proposal that `ops` applies with origin `agent`.
+- Revisions everywhere are content versions (`spearfia_core::version`), so an agent, the
+  CLI and the app agree on them.
 
-- MCP/HTTP Script and Visual Script edits use `spearfia-core::editing`: revision-guarded
-  commands with bounded per-server undo/redo. Clean external changes enter the desktop
-  document undo history, but this undo is separate from the `ops` history and is lost when
-  the server exits.
-- Media links save through `spearfia-core::links` under the project edit lock, outside
-  any undo history.
-
-New commands go in `spearfia-ops`. Moving the two paths above onto it is planned.
+Typing in the desktop editors saves directly under the same lock and keeps its own text
+undo; clean external changes (including `ops` changes) enter that undo too. Moving media
+files rewrites link paths outside the history, so an older link change can't be undone
+past it.
 
 ## Intent here, realization in the editor
 

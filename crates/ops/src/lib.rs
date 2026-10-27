@@ -7,11 +7,15 @@
 //! - **No stale writes.** [`apply`] re-reads the file and refuses if it no longer has the
 //!   plan's base version (someone, or something, edited it since).
 //! - **One history.** Every applied plan is recorded in `sync/history.jsonl` inside the
-//!   project, so [`undo`] works the same from the app, the CLI or an agent, and refuses to
-//!   undo over a later edit.
+//!   project, so [`undo`] and [`redo`] work the same from the app, the CLI or an agent
+//!   (MCP/HTTP), and refuse to run over a later edit.
+//! - **One writer at a time.** Applying, undoing and redoing hold the project edit lock
+//!   that the desktop's own saves also take.
 //!
-//! Commands live in modules per stage; [`transitions`] is the first.
+//! Commands live in modules per stage: [`transitions`], [`links`]. Agent Script and Visual
+//! Script edits are validated in `spearfia-core::editing` and applied here.
 
+pub mod links;
 pub mod transitions;
 
 use serde::{Deserialize, Serialize};
@@ -20,16 +24,27 @@ use spearfia_core::project::Project;
 use spearfia_script::Script;
 use std::fmt;
 
-const HISTORY: &str = "sync/history.jsonl";
+pub use spearfia_core::version;
 
-/// A document's version: a hash of its exact bytes, e.g. `v3f9a1c0d2e4b`.
-pub fn version(text: &str) -> String {
-    // FNV-1a: stable across builds and processes, so a version printed by the CLI can be
-    // passed back to it (or to the app) later.
-    let h = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    });
-    format!("v{:012x}", h >> 16)
+const HISTORY: &str = "sync/history.jsonl";
+/// Undone changes, newest last; any new change clears it.
+const REDO: &str = "sync/redo.jsonl";
+/// The oldest entries are dropped past either limit (each entry holds a whole document).
+const MAX_ENTRIES: usize = 100;
+const MAX_HISTORY_BYTES: usize = 32 * 1024 * 1024;
+
+/// A document's current text. A missing file reads as empty, except the Visual Script,
+/// which reads as its starting template (as the app shows it).
+pub fn read(project: &Project, rel: &str) -> Result<String> {
+    if rel == spearfia_core::visuals::FILE {
+        return Ok(project.read_visuals()?);
+    }
+    match project.read_doc(rel) {
+        Err(CoreError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            Ok(String::new())
+        }
+        r => Ok(r?),
+    }
 }
 
 #[derive(Debug)]
@@ -177,14 +192,22 @@ pub struct Entry {
 /// Write the plan if the document still has its base version, and record it for undo.
 /// Returns the new version. A plan that changes nothing writes nothing.
 pub fn apply(project: &Project, plan: &Plan, origin: Origin) -> Result<String> {
-    let current = Doc::load(project, &plan.doc)?;
-    current.expect(Some(&plan.base))?;
+    let _lock = project.edit_lock()?;
+    let current = read(project, &plan.doc)?;
+    let current_version = version(&current);
+    if current_version != plan.base {
+        return Err(OpError::Stale {
+            doc: plan.doc.clone(),
+            expected: plan.base.clone(),
+            current: current_version,
+        });
+    }
     if !plan.changes() {
-        return Ok(current.version);
+        return Ok(current_version);
     }
     project.write_doc(&plan.doc, &plan.text)?;
     let after = version(&plan.text);
-    let mut log = history(project)?;
+    let mut log = load_log(project, HISTORY)?;
     log.push(Entry {
         origin,
         summary: plan.summary.clone(),
@@ -193,13 +216,23 @@ pub fn apply(project: &Project, plan: &Plan, origin: Origin) -> Result<String> {
         after: after.clone(),
         at: spearfia_core::comments::now(),
     });
-    save_history(project, &log)?;
+    save_log(project, HISTORY, &log)?;
+    save_log(project, REDO, &[])?;
     Ok(after)
 }
 
 /// Every recorded change, oldest first.
 pub fn history(project: &Project) -> Result<Vec<Entry>> {
-    let text = match project.read_doc(HISTORY) {
+    load_log(project, HISTORY)
+}
+
+/// Undone changes that [`redo`] can reapply, the next one last.
+pub fn redo_stack(project: &Project) -> Result<Vec<Entry>> {
+    load_log(project, REDO)
+}
+
+fn load_log(project: &Project, rel: &str) -> Result<Vec<Entry>> {
+    let text = match project.read_doc(rel) {
         Ok(t) => t,
         Err(CoreError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
             return Ok(Vec::new());
@@ -209,39 +242,68 @@ pub fn history(project: &Project) -> Result<Vec<Entry>> {
     text.lines()
         .filter(|l| !l.trim().is_empty())
         .map(|l| {
-            serde_json::from_str(l)
-                .map_err(|e| OpError::Invalid(format!("{HISTORY} can't be read ({e}); undo is unavailable until it's fixed or deleted.")))
+            serde_json::from_str(l).map_err(|e| {
+                OpError::Invalid(format!(
+                    "{rel} can't be read ({e}); undo is unavailable until it's fixed or deleted."
+                ))
+            })
         })
         .collect()
 }
 
-fn save_history(project: &Project, log: &[Entry]) -> Result<()> {
+fn save_log(project: &Project, rel: &str, log: &[Entry]) -> Result<()> {
+    let mut keep = log.len().saturating_sub(MAX_ENTRIES);
+    while keep < log.len()
+        && log[keep..].iter().map(|e| e.before.len()).sum::<usize>() > MAX_HISTORY_BYTES
+    {
+        keep += 1;
+    }
     let mut out = String::new();
-    for e in log {
+    for e in &log[keep..] {
         let line = serde_json::to_string(e).map_err(|e| OpError::Invalid(e.to_string()))?;
         out.push_str(&line);
         out.push('\n');
     }
-    Ok(project.write_doc(HISTORY, &out)?)
+    if out.is_empty() && read(project, rel)?.is_empty() {
+        return Ok(()); // Don't create an empty log file.
+    }
+    Ok(project.write_doc(rel, &out)?)
+}
+
+/// Move the newest entry of `from` back: restore its text if the document still has the
+/// version it left, and record the reverse on `to`.
+fn step(project: &Project, from: &str, to: &str, nothing: &str, verb: &str) -> Result<Entry> {
+    let _lock = project.edit_lock()?;
+    let mut log = load_log(project, from)?;
+    let last = log.pop().ok_or_else(|| OpError::NotFound(nothing.into()))?;
+    let current = read(project, &last.doc)?;
+    if version(&current) != last.after {
+        return Err(OpError::Invalid(format!(
+            "Can't {verb} \"{}\": {} was edited after it.",
+            last.summary, last.doc
+        )));
+    }
+    project.write_doc(&last.doc, &last.before)?;
+    let mut other = load_log(project, to)?;
+    other.push(Entry {
+        before: current,
+        after: version(&last.before),
+        ..last.clone()
+    });
+    save_log(project, from, &log)?;
+    save_log(project, to, &other)?;
+    Ok(last)
 }
 
 /// Undo the most recent change. Refuses if its document was edited after that change, so
 /// undo never throws away someone else's later work. Returns what was undone.
 pub fn undo(project: &Project) -> Result<Entry> {
-    let mut log = history(project)?;
-    let last = log
-        .pop()
-        .ok_or_else(|| OpError::NotFound("Nothing to undo.".into()))?;
-    let current = Doc::load(project, &last.doc)?;
-    if current.version != last.after {
-        return Err(OpError::Invalid(format!(
-            "Can't undo \"{}\": {} was edited after it.",
-            last.summary, last.doc
-        )));
-    }
-    project.write_doc(&last.doc, &last.before)?;
-    save_history(project, &log)?;
-    Ok(last)
+    step(project, HISTORY, REDO, "Nothing to undo.", "undo")
+}
+
+/// Reapply the most recently undone change, under the same rule as [`undo`].
+pub fn redo(project: &Project) -> Result<Entry> {
+    step(project, REDO, HISTORY, "Nothing to redo.", "redo")
 }
 
 #[cfg(test)]
@@ -305,6 +367,122 @@ mod tests {
         assert!(err.contains("was edited after it"), "{err}");
         assert_eq!(p.read_doc("script/script.md").unwrap(), "edited by hand\n");
         assert_eq!(history(&p).unwrap().len(), 1, "the entry stays");
+    }
+
+    #[test]
+    fn redo_reapplies_and_a_new_change_clears_it() {
+        let p = project(
+            "redo", "a
+",
+        );
+        let doc = Doc::main(&p).unwrap();
+        apply(
+            &p,
+            &doc.plan(
+                "b
+"
+                .into(),
+                "a to b",
+            ),
+            Origin::Agent,
+        )
+        .unwrap();
+        undo(&p).unwrap();
+        assert_eq!(redo(&p).unwrap().summary, "a to b");
+        assert_eq!(
+            p.read_doc("script/script.md").unwrap(),
+            "b
+"
+        );
+        assert!(matches!(redo(&p), Err(OpError::NotFound(_))));
+        undo(&p).unwrap();
+        let doc = Doc::main(&p).unwrap();
+        apply(
+            &p,
+            &doc.plan(
+                "c
+"
+                .into(),
+                "a to c",
+            ),
+            Origin::Cli,
+        )
+        .unwrap();
+        assert!(redo_stack(&p).unwrap().is_empty());
+        // Undo still refuses over a later edit, and so does redo.
+        undo(&p).unwrap();
+        p.write_doc(
+            "script/script.md",
+            "by hand
+",
+        )
+        .unwrap();
+        assert!(redo(&p).is_err());
+        assert_eq!(
+            p.read_doc("script/script.md").unwrap(),
+            "by hand
+"
+        );
+    }
+
+    #[test]
+    fn history_keeps_the_newest_entries() {
+        let p = project(
+            "cap", "0
+",
+        );
+        for i in 1..=MAX_ENTRIES + 5 {
+            let doc = Doc::main(&p).unwrap();
+            apply(
+                &p,
+                &doc.plan(
+                    format!(
+                        "{i}
+"
+                    ),
+                    format!("to {i}"),
+                ),
+                Origin::Cli,
+            )
+            .unwrap();
+        }
+        let log = history(&p).unwrap();
+        assert_eq!(log.len(), MAX_ENTRIES);
+        assert_eq!(
+            log.last().unwrap().summary,
+            format!("to {}", MAX_ENTRIES + 5)
+        );
+    }
+
+    #[test]
+    fn two_writers_cannot_both_apply_the_same_base() {
+        let p = project(
+            "race", "start
+",
+        );
+        let base = Doc::main(&p).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let runs: Vec<_> = [
+            "first
+", "second
+",
+        ]
+        .into_iter()
+        .map(|text| {
+            let (p, plan, barrier) = (p.clone(), base.plan(text.into(), text), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                apply(&p, &plan, Origin::Agent).is_ok()
+            })
+        })
+        .collect();
+        let ok = runs
+            .into_iter()
+            .map(|r| r.join().unwrap())
+            .filter(|ok| *ok)
+            .count();
+        assert_eq!(ok, 1);
+        assert_eq!(history(&p).unwrap().len(), 1);
     }
 
     #[test]

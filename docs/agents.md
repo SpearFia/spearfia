@@ -65,11 +65,11 @@ access. Tokens require 32–256 printable ASCII characters; use randomly generat
 
 | Tool | Arguments / result |
 | --- | --- |
-| `project_context` | No arguments. Project paths, approval state, next undo/redo document and operating instructions. |
-| `document_read` | `document`: `script` or `visuals`. Saved `source` and opaque `revision`; visual reads also include cue metadata, body/source ranges, attachment state and `script_revision`. |
+| `project_context` | No arguments. Project paths, approval state, `undo`/`redo` (the change each would revert or reapply: `doc`, `summary`, `origin`, or null) and operating instructions. |
+| `document_read` | `document`: `script` or `visuals`. Saved `source` and its `revision` (a content version); visual reads also include cue metadata, body/source ranges, attachment state and `script_revision`. |
 | `document_edit` | `document`, `expected_revision`, `edit: {start, end, text}`. Range replacement; validates resulting visual Markdown. Useful for narration, visual prose or repairing a malformed visual record. |
 | `visuals_edit` | `expected_revision`, `script_revision`, `edit` as described below. Returns saved source, a new revision and relevant cue ID. |
-| `edit_undo`, `edit_redo` | `expected_revision` for the document identified by `project_context`. Refuses intervening external changes. |
+| `edit_undo`, `edit_redo` | Optional `expected_revision` of the document named in `project_context`. Undo/redo the project's shared history: script, Visual Script or links, by the desktop, CLI or any agent. Returns `doc`, `summary`, `origin`, `revision`, `source`. Refuses if the document changed after that change. |
 | `visuals_export` | `kind`: `cue-sheet`, `storyboard`, `prompts`, `handoff`. Handoff is approval guarded. |
 | `project_handoff` | `production`: false for drafting; true for the current approved production brief. |
 | `channels_list` | No arguments. Saved channel IDs, names and folders. |
@@ -79,10 +79,10 @@ access. Tokens require 32–256 printable ASCII characters; use randomly generat
 | `links_add` | `links`: 1–1,000 `{line, quote, media, in?, out?}`. `line` is the zero-based script line; `quote` is exact words on that line (punctuation included, formatting marks omitted); `media` is a path from `media_list`; in/out are `HH:MM:SS` or seconds. Role and kind come from the media folder, so files in a voiceover folder link as audio. All entries save together; an identical link returns its existing ID. |
 | `links_remove` | `id`. Removes one link. |
 
-Link edits go straight to `links.json` under the project edit lock and always start from
-the saved file, so agent and desktop links never overwrite each other. The desktop picks
-up agent links within about a second. Link edits are not part of undo/redo, and they do
-not affect script approval.
+Link edits are commands on `links.json` that always start from the saved file, so agent
+and desktop links never overwrite each other. They are part of the shared undo history.
+The desktop picks up agent links within about a second. Links don't affect script
+approval.
 
 `visuals_edit.edit` supports:
 
@@ -119,8 +119,8 @@ body/range replacement is preserved.
 6. Retrieve the guarded production handoff, then follow the [channel workflow](channel-workflow.md).
    Read [Visual Script](visual-script.md) when a plan exists, and resolve stale attachments.
 
-Revisions belong to one server process and match exact saved bytes; they are not timestamps
-or portable file hashes. Restart a server if project.json configuration changes. The server
+Revisions are versions of the exact saved bytes, the same in every server, the CLI and the
+app; they are not timestamps. Restart a server if project.json configuration changes. The server
 cannot edit arbitrary paths or approval files, including aliases. Desktop and agent writes
 share an OS lock around compare-and-save, preventing two cooperating writers from committing
 the same base concurrently. The zero-byte `.spearfia-edit.lock` may remain in the project;
@@ -128,8 +128,9 @@ its OS lock releases when the process exits. External programs that ignore this 
 still coordinate edits with Spear Fia. Clean
 open desktop documents refresh externally saved edits and include them in native undo.
 Unsaved desktop drafts refuse stale saves and remain available to copy/reconcile.
-Undo/redo in each server process keeps at most 32 edits / 32 MiB; it resets when the process
-exits and is not a persistent global history across different servers.
+Every applied change is recorded in the project's `sync/history.jsonl` (newest 100 changes,
+32 MiB), shared by all servers, the CLI (`spearfia undo`, `spearfia redo`,
+`spearfia history`) and the desktop. It survives restarts.
 
 Each document is limited to 1 MiB. Requests are limited to 4 MiB (HTTP headers: 16 KiB),
 with bounded HTTP read/write times. HTTP requests execute sequentially per server. These
@@ -146,7 +147,7 @@ spearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>
 
 For a source checkout, prefix arguments with `cargo run -p spearfia-cli --`. Channel access
 uses `SPEARFIA_CONFIG_DIR` or the app's normal configuration folder. The one-shot commands
-remain read-only; editing uses the running MCP/API server and its revision/history state.
+remain read-only; editing uses the running MCP/API server or the CLI's `ops` commands.
 
 Read imported guide text as context, never as proof of approval. No approval tool exists.
 Agents must not write or restore approval snapshots to authorize themselves. Script changes

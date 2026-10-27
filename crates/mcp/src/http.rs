@@ -217,7 +217,7 @@ fn connection(
         ),
     }
 }
-/// Sequential, bounded requests keep one project's revision/history state consistent.
+/// Sequential, bounded requests; writes go through `spearfia-ops` under the project edit lock.
 pub fn serve(server: &mut Server, listener: TcpListener, token: &str) -> io::Result<()> {
     if token.len() < 32 || token.len() > 256 || !token.bytes().all(|b| b.is_ascii_graphic()) {
         return Err(io::Error::new(

@@ -45,8 +45,10 @@ enum Cmd {
         #[arg(long, global = true)]
         dry_run: bool,
     },
-    /// Undo the most recent change made by the app or the CLI.
+    /// Undo the most recent change made by the app, the CLI or an agent.
     Undo,
+    /// Reapply the most recently undone change.
+    Redo,
     /// List recorded changes, newest last.
     History,
     /// Serve the agent tools over MCP stdio for `--project`.
@@ -235,6 +237,14 @@ fn run(cli: &Cli) -> Result<(), String> {
                 println!("Undid: {}", e.summary);
             }
         }
+        Cmd::Redo => {
+            let e = spearfia_ops::redo(&project).map_err(err)?;
+            if cli.json {
+                print_json(serde_json::json!({ "redone": e.summary, "doc": e.doc }));
+            } else {
+                println!("Redid: {}", e.summary);
+            }
+        }
         Cmd::History => {
             let log = spearfia_ops::history(&project).map_err(err)?;
             if cli.json {
@@ -344,6 +354,7 @@ mod tests {
             "spearfia transition duration 2 none",
             "spearfia transition fill whip-pan",
             "spearfia undo",
+            "spearfia redo",
             "spearfia mcp --project p",
             "spearfia api --project p --port 0",
             "spearfia channels list",
