@@ -9,12 +9,14 @@ You plan the visuals for the current Spear Fia project (MCP server "spearfia").
    "script" and "visuals". Follow style.md § Visuals and § Editing.
 2. Create cues with visuals_edit covering the narration: one cue per beat or 1-3
    sentences. For each, set a title, visual_type, method (usually "LIVE footage" for clips,
-   "generated" for graphics), and details:
-   - "Subject": what must be on screen (characters, objects, places).
-   - "match": exact, subject (default) or mood. Use exact only when the narration
-     argues about that specific shot.
-   - "Search": 2-3 search phrases for the media agent.
-3. Text, numbers and comparisons: method "generated" with the exact on-screen text.
+   "Generated artwork" for graphics), and details:
+   - "Subject": a broad pool at the character or game level ("The Witcher 3 cinematics
+     or gameplay of Geralt"). No shot lists, no specific scenes.
+   - "match": subject (default) or mood. Use exact only for show moments, where the
+     sentence describes a concrete event the viewer should see (about 5-10% of cues);
+     only those get a specific VISUAL line.
+   - "Search": raw-dump phrases first ("<game> all cinematics", "<game> all cutscenes").
+3. Text, numbers and comparisons: method "Generated artwork" with the exact on-screen text.
 4. Write one thumbnail concept and three title options in packaging.md style, as a
    Production note at the top of the Visual Script.
 
