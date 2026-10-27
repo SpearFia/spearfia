@@ -910,10 +910,13 @@ impl MediaStage {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if widgets::button(ui, "Unlink").clicked() {
-                        self.error = links
-                            .remove_saved(project, &id)
-                            .err()
-                            .map(|e| format!("Couldn't save links.json: {e}"));
+                        match spearfia_ops::links::remove(project, &id, spearfia_ops::Origin::App) {
+                            Ok(saved) => {
+                                *links = saved;
+                                self.error = None;
+                            }
+                            Err(e) => self.error = Some(format!("Couldn't unlink: {e}")),
+                        }
                         self.selected_link = None;
                     }
                     if widgets::button(ui, "Show in folder").clicked()
@@ -1042,8 +1045,9 @@ impl MediaStage {
         if requests.is_empty() {
             return;
         }
-        match links.add_batch(project, requests) {
-            Ok(_) => {
+        match spearfia_ops::links::add(project, requests, spearfia_ops::Origin::App) {
+            Ok((saved, _)) => {
+                *links = saved;
                 self.error = None;
                 self.interaction.selection = Some(sel);
                 self.selected_link = None;

@@ -26,11 +26,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-New edit commands go in `spearfia-ops`, the command layer: plans, version checks and one
-undo history shared by the desktop and CLI. Two older paths remain until they move there:
-MCP/HTTP Script and Visual Script edits use `spearfia-core::editing` (revision checks and
-a per-server undo), and media links save through `spearfia-core::links`. Don't add a
-third path that edits project state directly.
+All CLI, MCP/HTTP and desktop commands go through the command layer in `spearfia-ops`:
+plans, version checks, the project edit lock and one undo/redo history
+(`sync/history.jsonl`). `spearfia-core::editing` only validates agent edits into proposals
+that `ops` applies. Don't add a second path that edits project state directly. (Typing in
+the desktop editors is saved directly and has its own text undo.)
 
 ## Naming
 

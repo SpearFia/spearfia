@@ -3,11 +3,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use spearfia_core::{
     CoreError, app_state, channels,
-    editing::{self, Document, Editor, TextEdit, VisualEdit},
+    editing::{self, Document, Editor, Proposal, TextEdit, VisualEdit},
     links::{self, Link, LinkKind, LinkMedia, Links},
     media::{self, FolderNode},
+    version,
     visuals::Plan,
 };
+use spearfia_ops::{OpError, Origin};
 use std::{
     collections::HashMap,
     io::{self, BufRead, Write},
@@ -17,7 +19,7 @@ pub mod http;
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const PROTOCOL: &str = "2025-11-25";
-const INSTRUCTIONS: &str = "Read documents before editing. Revisions belong to this server and bind exact saved bytes. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. No tool here launches generators, publishes or pushes FilmCraft timelines. Undo/redo covers up to 32 edits / 32 MiB during this server process; external edits cause conflicts.";
+const INSTRUCTIONS: &str = "Read documents before editing. Revisions are versions of the exact saved bytes; any server, the CLI and the app compute the same ones. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. No tool here launches generators, publishes or pushes FilmCraft timelines. edit_undo/edit_redo use the project's shared history (desktop, CLI and agents; script, Visual Script and links) and refuse to run over a later edit.";
 fn invalid(text: impl Into<String>) -> CoreError {
     CoreError::Invalid(text.into())
 }
@@ -44,12 +46,12 @@ pub fn tools() -> Result<Value, CoreError> {
         &["line", "quote", "media"],
     );
     Ok(json!({"tools":[
-        tool("project_context","Read the bound project, approval status and next undo/redo document. No approval action is exposed.",empty.clone(),true),
+        tool("project_context","Read the bound project, approval status and the next change edit_undo/edit_redo would revert or reapply. No approval action is exposed.",empty.clone(),true),
         tool("document_read","Read saved script or visual Markdown and its revision; visuals include typed cues, ranges and attachment status. Read both before visual edits.",schema(json!({"document":document}), &["document"]),true),
         tool("document_edit","Replace a half-open UTF-8 byte range in script or visuals. Requires a revision from document_read; malformed visual plans and stale writes fail. Changes invalidate script approval by content.",schema(json!({"document":document,"expected_revision":string,"edit":text_edit}), &["document","expected_revision","edit"]),false),
         tool("visuals_edit","Create/update/delete/split/merge/reanchor cues, bind references, add or reorder shots using core operations. Read both documents first. Update preserves omitted fields; details merge by key, references replace explicitly. Split at is an absolute visual-document byte offset.",schema(json!({"expected_revision":string,"script_revision":string,"edit":visual_edit}), &["expected_revision","script_revision","edit"]),false),
-        tool("edit_undo","Undo the latest edit in this server session. Read the undo_document from project_context, then supply its current revision. Refuses intervening external edits.",schema(json!({"expected_revision":string}), &["expected_revision"]),false),
-        tool("edit_redo","Redo the next edit in this server session. Read redo_document from project_context, then supply its current revision.",schema(json!({"expected_revision":string}), &["expected_revision"]),false),
+        tool("edit_undo","Undo the project's latest change, whoever made it (desktop, CLI or agent): script, Visual Script or media links. See project_context.undo. Optional expected_revision must match that document's current revision. Refuses if the document changed after it.",schema(json!({"expected_revision":string}), &[]),false),
+        tool("edit_redo","Reapply the most recently undone change. See project_context.redo. Optional expected_revision must match that document's current revision.",schema(json!({"expected_revision":string}), &[]),false),
         tool("visuals_export","Export cue-sheet, text storyboard, prompts or guarded production handoff. Handoff requires creator-approved script/channel and resolved visual anchors; this never runs generators.",schema(json!({"kind":{"type":"string","enum":["cue-sheet","storyboard","prompts","handoff"]}}), &["kind"]),true),
         tool("project_handoff","Read a drafting brief or a guarded production handoff. Production requires creator approval in the desktop. Cannot grant approval.",schema(json!({"production":{"type":"boolean"}}), &["production"]),true),
         tool("channels_list","List shared channel guide IDs, names and folders.",empty.clone(),true),
@@ -86,7 +88,8 @@ struct VisualArgs {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Revision {
-    expected_revision: String,
+    #[serde(default)]
+    expected_revision: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -136,6 +139,19 @@ fn script_lines(script: &spearfia_script::Script) -> Vec<(usize, Vec<&str>)> {
         .collect()
 }
 
+fn op(e: OpError) -> CoreError {
+    match e {
+        OpError::Core(e) => e,
+        e => invalid(e.to_string()),
+    }
+}
+fn summary(entry: Option<&spearfia_ops::Entry>) -> Value {
+    entry.map_or(
+        Value::Null,
+        |e| json!({"doc":e.doc,"summary":e.summary,"origin":e.origin}),
+    )
+}
+
 pub struct Server {
     pub editor: Editor,
     initialized: bool,
@@ -149,13 +165,25 @@ impl Server {
             ready: false,
         })
     }
+    /// Apply a validated agent edit through the command layer and return the saved document.
+    fn commit(&self, p: Proposal) -> Result<editing::Snapshot, CoreError> {
+        let plan = spearfia_ops::Plan {
+            doc: p.rel,
+            base: version(&p.before),
+            before: p.before,
+            text: p.after,
+            summary: p.summary,
+        };
+        spearfia_ops::apply(&self.editor.project, &plan, Origin::Agent).map_err(op)?;
+        self.editor.read(p.document)
+    }
     pub fn call(&mut self, name: &str, arguments: Value) -> Result<Value, CoreError> {
         self.editor.validate_paths()?;
         match name {
             "project_context" => {
                 let _: Empty = decode(arguments)?;
                 Ok(
-                    json!({"project":self.editor.project.name(),"root":self.editor.project.root,"script_path":self.editor.project.file.script,"visuals_path":spearfia_core::visuals::FILE,"approval":self.editor.project.script_approval(None)?.label(),"undo_document":self.editor.history_document(false),"redo_document":self.editor.history_document(true),"instructions":INSTRUCTIONS}),
+                    json!({"project":self.editor.project.name(),"root":self.editor.project.root,"script_path":self.editor.project.file.script,"visuals_path":spearfia_core::visuals::FILE,"approval":self.editor.project.script_approval(None)?.label(),"undo":summary(spearfia_ops::history(&self.editor.project).map_err(op)?.last()),"redo":summary(spearfia_ops::redo_stack(&self.editor.project).map_err(op)?.last()),"instructions":INSTRUCTIONS}),
                 )
             }
             "document_read" => {
@@ -177,29 +205,56 @@ impl Server {
             }
             "document_edit" => {
                 let a: EditArgs = decode(arguments)?;
-                serde_json::to_value(self.editor.edit_document(
-                    a.document,
-                    &a.expected_revision,
-                    a.edit,
-                )?)
-                .map_err(|e| invalid(e.to_string()))
+                let proposal =
+                    self.editor
+                        .edit_document(a.document, &a.expected_revision, a.edit)?;
+                serde_json::to_value(self.commit(proposal)?).map_err(|e| invalid(e.to_string()))
             }
             "visuals_edit" => {
                 let a: VisualArgs = decode(arguments)?;
-                let (snapshot, id) =
+                let (proposal, id) =
                     self.editor
                         .edit_visuals(&a.expected_revision, &a.script_revision, a.edit)?;
+                let snapshot = self.commit(proposal)?;
                 Ok(
                     json!({"document":snapshot.document,"revision":snapshot.revision,"source":snapshot.source,"cue_id":id}),
                 )
             }
             "edit_undo" | "edit_redo" => {
                 let a: Revision = decode(arguments)?;
-                serde_json::to_value(
-                    self.editor
-                        .history(&a.expected_revision, name == "edit_redo")?,
+                let project = &self.editor.project;
+                let redo = name == "edit_redo";
+                if let Some(expected) = a.expected_revision {
+                    let stack = if redo {
+                        spearfia_ops::redo_stack(project)
+                    } else {
+                        spearfia_ops::history(project)
+                    }
+                    .map_err(op)?;
+                    let next = stack.last().ok_or_else(|| {
+                        invalid(if redo {
+                            "Nothing to redo."
+                        } else {
+                            "Nothing to undo."
+                        })
+                    })?;
+                    if version(&spearfia_ops::read(project, &next.doc).map_err(op)?) != expected {
+                        return Err(invalid(format!(
+                            "{} changed since it was read. Read project_context and the document again.",
+                            next.doc
+                        )));
+                    }
+                }
+                let entry = if redo {
+                    spearfia_ops::redo(project)
+                } else {
+                    spearfia_ops::undo(project)
+                }
+                .map_err(op)?;
+                let source = spearfia_ops::read(project, &entry.doc).map_err(op)?;
+                Ok(
+                    json!({"doc":entry.doc,"summary":entry.summary,"origin":entry.origin,"revision":version(&source),"source":source}),
                 )
-                .map_err(|e| invalid(e.to_string()))
             }
             "visuals_export" => {
                 let a: Export = decode(arguments)?;
@@ -301,13 +356,16 @@ impl Server {
                         out_point: r.out_point,
                     });
                 }
-                let ids = Links::default().add_batch(&self.editor.project, requests)?;
+                let (_, ids) =
+                    spearfia_ops::links::add(&self.editor.project, requests, Origin::Agent)
+                        .map_err(op)?;
                 Ok(json!({"ids":ids}))
             }
             "links_remove" => {
                 let a: IdArgs = decode(arguments)?;
-                let removed = Links::default().remove_saved(&self.editor.project, &a.id)?;
-                Ok(json!({"removed":removed.id}))
+                spearfia_ops::links::remove(&self.editor.project, &a.id, Origin::Agent)
+                    .map_err(op)?;
+                Ok(json!({"removed":a.id}))
             }
             "timeline_push" => {
                 let _: Empty = decode(arguments)?;
@@ -581,8 +639,6 @@ mod tests {
             std::fs::write(root.join(dir).join(file), b"").unwrap();
         }
         let mut s = Server::open(&root).unwrap();
-        // The desktop loaded links before the agent wrote any.
-        let mut desktop = Links::load(&s.editor.project).unwrap();
 
         let files = s.call("media_list", json!({})).unwrap()["files"].clone();
         assert!(
@@ -607,7 +663,7 @@ mod tests {
             .unwrap();
         assert_eq!(added["ids"], json!(["k1"]));
 
-        // A stale desktop copy adds its own link; the agent's link survives.
+        // The desktop adds its own link through the same command layer.
         let link = Link {
             id: String::new(),
             quote: "Hello".into(),
@@ -621,8 +677,22 @@ mod tests {
             in_point: None,
             out_point: None,
         };
-        desktop.add_batch(&s.editor.project, vec![link]).unwrap();
+        let (desktop, _) =
+            spearfia_ops::links::add(&s.editor.project, vec![link], Origin::App).unwrap();
         assert_eq!(desktop.links.len(), 2);
+
+        // One history: an agent undo reverts the desktop's newer link first, then its own.
+        let context = s.call("project_context", json!({})).unwrap();
+        assert_eq!(context["undo"]["origin"], "app");
+        let undone = s.call("edit_undo", json!({})).unwrap();
+        assert_eq!(undone["doc"], "links.json");
+        assert_eq!(Links::load(&s.editor.project).unwrap().links.len(), 1);
+        assert!(
+            s.call("edit_redo", json!({"expected_revision":"v000"}))
+                .is_err()
+        );
+        s.call("edit_redo", json!({})).unwrap();
+        assert_eq!(Links::load(&s.editor.project).unwrap().links.len(), 2);
 
         let listed = s.call("links_list", json!({})).unwrap();
         let first = &listed["links"][0];

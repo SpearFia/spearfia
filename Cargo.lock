@@ -3004,6 +3004,7 @@ dependencies = [
  "serde_json",
  "spearfia-adapter-filmcraft",
  "spearfia-core",
+ "spearfia-ops",
  "spearfia-script",
 ]
 

@@ -1,9 +1,6 @@
-//! `spearfia-core`: command layer, undo history and project model. Every UI, CLI, MCP and API
-//! action is a typed command here, so AI and human edits share one undo history.
-//!
-//! Includes project/channel/catalog state and revision-guarded agent document/cue edits.
-//! Server undo history is bounded and session-local; the desktop records clean external
-//! edits in its document undo history.
+//! `spearfia-core`: project model and files. Includes project/channel/catalog state and the
+//! validation behind agent document/cue edits. Changes are applied, recorded and undone by
+//! the command layer in `spearfia-ops`.
 
 pub mod app_state;
 pub mod channels;
@@ -20,6 +17,16 @@ pub mod visions;
 pub mod visuals;
 
 pub use error::CoreError;
+
+/// A document's version: a hash of its exact bytes, e.g. `v3f9a1c0d2e4b`.
+pub fn version(text: &str) -> String {
+    // FNV-1a: stable across builds and processes, so a version printed by the CLI can be
+    // passed back to it (or to the app or an agent) later.
+    let h = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("v{:012x}", h >> 16)
+}
 
 use std::fmt;
 use std::str::FromStr;

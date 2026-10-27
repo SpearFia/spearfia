@@ -1,4 +1,6 @@
-//! Project-bound agent edits. Revision tokens guard exact saved bytes, not timestamps.
+//! Project-bound agent edits: path checks and validation. An edit becomes a [`Proposal`]
+//! (before/after text) that `spearfia-ops` applies and records in the project history.
+//! Revisions are content versions ([`crate::version`]), so they work across processes.
 use crate::{
     CoreError,
     error::Result,
@@ -13,7 +15,6 @@ use std::{
 
 pub const DOCUMENT_SCHEMA: &str = include_str!("../../../schemas/document-edit.schema.json");
 pub const VISUAL_SCHEMA: &str = include_str!("../../../schemas/visual-edit.schema.json");
-const MAX_HISTORY_BYTES: usize = 32 * 1024 * 1024;
 fn invalid(text: impl Into<String>) -> CoreError {
     CoreError::Invalid(text.into())
 }
@@ -90,18 +91,19 @@ pub enum VisualEdit {
         to: usize,
     },
 }
+/// A validated change to one document, not yet written.
 #[derive(Debug, Clone)]
-struct Change {
-    document: Document,
-    before: String,
-    after: String,
+pub struct Proposal {
+    pub document: Document,
+    /// Project-relative path, `/`-separated.
+    pub rel: String,
+    pub before: String,
+    pub after: String,
+    pub summary: String,
 }
-/// History lives for this server process. It never overwrites intervening external edits.
+/// Agent access to one project's script and Visual Script.
 pub struct Editor {
     pub project: Project,
-    snapshots: Vec<Snapshot>,
-    undo: Vec<Change>,
-    redo: Vec<Change>,
 }
 impl Editor {
     pub fn open(root: &Path) -> Result<Self> {
@@ -118,12 +120,7 @@ impl Editor {
         let source = crate::channels::read_limited(&project_path, visuals::MAX_BYTES)?;
         let file = serde_json::from_str(&source).map_err(|e| CoreError::json(&project_path, e))?;
         let project = Project { root, file };
-        let editor = Self {
-            project,
-            snapshots: vec![],
-            undo: vec![],
-            redo: vec![],
-        };
+        let editor = Self { project };
         editor.checked_path(Document::Script)?;
         editor.checked_path(Document::Visuals)?;
         editor.inside(&editor.project.file.vision)?;
@@ -240,111 +237,79 @@ impl Editor {
             crate::channels::read_limited(&path, visuals::MAX_BYTES)
         }
     }
-    pub fn read(&mut self, document: Document) -> Result<Snapshot> {
-        let source = self.disk(document)?;
-        if let Some(snapshot) = self
-            .snapshots
-            .iter()
-            .find(|s| s.document == document && s.source == source)
-        {
-            return Ok(snapshot.clone());
+    /// Project-relative path of a document, `/`-separated.
+    pub fn rel(&self, document: Document) -> String {
+        match document {
+            Document::Script => self.project.file.script.replace('\\', "/"),
+            Document::Visuals => visuals::FILE.to_owned(),
         }
-        let mut random = [0u8; 16];
-        getrandom::fill(&mut random)
-            .map_err(|e| invalid(format!("Cannot create an edit revision: {e}")))?;
-        let revision = random.iter().map(|b| format!("{b:02x}")).collect();
-        let snapshot = Snapshot {
+    }
+    pub fn read(&self, document: Document) -> Result<Snapshot> {
+        let source = self.disk(document)?;
+        Ok(Snapshot {
             document,
-            revision,
+            revision: crate::version(&source),
             source,
-        };
-        self.snapshots.retain(|s| s.document != document);
-        self.snapshots.push(snapshot.clone());
-        Ok(snapshot)
+        })
     }
     fn base(&self, document: Document, expected: &str) -> Result<String> {
-        let snapshot = self
-            .snapshots
-            .iter()
-            .find(|s| s.document == document && s.revision == expected)
-            .ok_or_else(|| {
-                invalid(
-                    "Unknown/stale revision. Read this document from this server before editing.",
-                )
-            })?;
         let current = self.disk(document)?;
-        if current != snapshot.source {
+        if crate::version(&current) != expected {
             return Err(invalid(
-                "The document changed since it was read. Read it again and reconcile the edit.",
+                "The document changed since it was read, or the revision is wrong. Read it again and reconcile the edit.",
             ));
         }
         Ok(current)
     }
-    fn save(&mut self, document: Document, before: &str, after: &str) -> Result<Snapshot> {
+    fn propose(
+        &self,
+        document: Document,
+        before: String,
+        after: String,
+        summary: String,
+    ) -> Result<Proposal> {
         if after.len() > visuals::MAX_BYTES {
             return Err(invalid("Agent documents are limited to 1 MiB."));
         }
         self.checked_path(document)?;
-        if self.disk(document)? != before {
-            return Err(invalid(
-                "The document changed during the edit. Read it again.",
-            ));
-        }
-        if document == Document::Visuals {
-            self.project.write_visuals(before, after)?;
-        } else {
-            self.project
-                .write_doc_expected(&self.project.file.script, before, after)?;
-        }
-        self.read(document)
+        Ok(Proposal {
+            document,
+            rel: self.rel(document),
+            before,
+            after,
+            summary,
+        })
     }
-    fn commit(&mut self, document: Document, before: String, after: String) -> Result<Snapshot> {
-        let snapshot = self.save(document, &before, &after)?;
-        if before != after {
-            self.undo.push(Change {
-                document,
-                before,
-                after,
-            });
-            self.redo.clear();
-            while self.undo.len() > 32
-                || self
-                    .undo
-                    .iter()
-                    .map(|c| c.before.len().saturating_add(c.after.len()))
-                    .sum::<usize>()
-                    > MAX_HISTORY_BYTES
-            {
-                self.undo.remove(0);
-            }
-        }
-        Ok(snapshot)
-    }
-    pub fn edit_script(&mut self, revision: &str, edit: TextEdit) -> Result<Snapshot> {
+    pub fn edit_script(&self, revision: &str, edit: TextEdit) -> Result<Proposal> {
         self.edit_document(Document::Script, revision, edit)
     }
     pub fn edit_document(
-        &mut self,
+        &self,
         document: Document,
         revision: &str,
         edit: TextEdit,
-    ) -> Result<Snapshot> {
+    ) -> Result<Proposal> {
         let source = self.base(document, revision)?;
         let out = visuals::replace(&source, edit.start..edit.end, &edit.text)?;
         if document == Document::Visuals {
             Plan::parse(&out)?;
         }
-        self.commit(document, source, out)
+        let summary = match document {
+            Document::Script => "Agent edit to the script",
+            Document::Visuals => "Agent edit to the Visual Script",
+        };
+        self.propose(document, source, out, summary.into())
     }
     pub fn edit_visuals(
-        &mut self,
+        &self,
         revision: &str,
         script_revision: &str,
         edit: VisualEdit,
-    ) -> Result<(Snapshot, Option<String>)> {
+    ) -> Result<(Proposal, Option<String>)> {
         let source = self.base(Document::Visuals, revision)?;
         let script = self.base(Document::Script, script_revision)?;
         let plan = Plan::parse(&source)?;
+        let summary = format!("Agent Visual Script edit: {}", edit.action());
         let (out, id) = apply_visual(&plan, &script, edit)?;
         Plan::parse(&out)?;
         if self.disk(Document::Script)? != script {
@@ -352,36 +317,23 @@ impl Editor {
                 "Narration changed during the visual edit. Read both documents again.",
             ));
         }
-        let snapshot = self.commit(Document::Visuals, source, out)?;
-        Ok((snapshot, id))
+        Ok((self.propose(Document::Visuals, source, out, summary)?, id))
     }
-    pub fn history_document(&self, redo: bool) -> Option<Document> {
-        (if redo { &self.redo } else { &self.undo })
-            .last()
-            .map(|c| c.document)
-    }
-    pub fn history(&mut self, revision: &str, redo: bool) -> Result<Snapshot> {
-        let change = (if redo { &self.redo } else { &self.undo })
-            .last()
-            .cloned()
-            .ok_or_else(|| invalid("There is no edit to undo/redo in this server session."))?;
-        let current = self.base(change.document, revision)?;
-        let expected = if redo { &change.before } else { &change.after };
-        if &current != expected {
-            return Err(invalid(
-                "A later external edit prevents this undo/redo. Reconcile the current document first.",
-            ));
+}
+impl VisualEdit {
+    /// The action name, as in the edit schema.
+    pub fn action(&self) -> &'static str {
+        match self {
+            Self::Create { .. } => "create cue",
+            Self::Update { .. } => "update cue",
+            Self::Delete { .. } => "delete cue",
+            Self::Split { .. } => "split cue",
+            Self::Merge { .. } => "merge cues",
+            Self::Reanchor { .. } => "reanchor cue",
+            Self::BindReference { .. } => "bind reference",
+            Self::AddShot { .. } => "add shot",
+            Self::MoveShot { .. } => "move shot",
         }
-        let target = if redo { &change.after } else { &change.before };
-        let snapshot = self.save(change.document, &current, target)?;
-        if redo {
-            self.redo.pop();
-            self.undo.push(change);
-        } else {
-            self.undo.pop();
-            self.redo.push(change);
-        }
-        Ok(snapshot)
     }
 }
 fn resolved_destination(path: &Path) -> Result<PathBuf> {
@@ -564,12 +516,17 @@ mod tests {
         .unwrap();
         Editor::open(&root).unwrap()
     }
+    /// Write a proposal the way `spearfia-ops` would, and read the document back.
+    fn commit(e: &Editor, p: Proposal) -> Snapshot {
+        e.project.write_doc(&p.rel, &p.after).unwrap();
+        e.read(p.document).unwrap()
+    }
     #[test]
-    fn typed_edits_references_and_history_preserve_ids_and_unknown_prose() {
-        let mut e = editor();
+    fn typed_edits_and_references_preserve_ids_and_unknown_prose() {
+        let e = editor();
         let s = e.read(Document::Script).unwrap();
         let v = e.read(Document::Visuals).unwrap();
-        let (v, id) = e
+        let (p, id) = e
             .edit_visuals(
                 &v.revision,
                 &s.revision,
@@ -580,23 +537,31 @@ mod tests {
                 },
             )
             .unwrap();
+        assert_eq!(p.summary, "Agent Visual Script edit: create cue");
+        let v = commit(&e, p);
         let id = id.unwrap();
-        let (v, _) = e
+        let (p, _) = e
             .edit_visuals(
                 &v.revision,
                 &s.revision,
                 VisualEdit::Update {
                     id: id.clone(),
                     patch: CuePatch {
-                        body: Some("VISUAL: A garden.\n\nUnrecognized prose 🍀".into()),
+                        body: Some(
+                            "VISUAL: A garden.
+
+Unrecognized prose 🍀"
+                                .into(),
+                        ),
                         method: Some("Reuse".into()),
                         ..Default::default()
                     },
                 },
             )
             .unwrap();
+        let v = commit(&e, p);
         assert!(v.source.contains("Unrecognized prose 🍀"));
-        let (v, _) = e
+        let (p, _) = e
             .edit_visuals(
                 &v.revision,
                 &s.revision,
@@ -612,6 +577,7 @@ mod tests {
                 },
             )
             .unwrap();
+        let v = commit(&e, p);
         assert_eq!(
             Plan::parse(&v.source)
                 .unwrap()
@@ -622,55 +588,47 @@ mod tests {
                 .len(),
             1
         );
-        let undo = e.history(&v.revision, false).unwrap();
-        let redo = e.history(&undo.revision, true).unwrap();
-        assert_eq!(redo.source, v.source);
-        let (deleted, _) = e
-            .edit_visuals(&redo.revision, &s.revision, VisualEdit::Delete { id })
+        let (p, _) = e
+            .edit_visuals(&v.revision, &s.revision, VisualEdit::Delete { id })
             .unwrap();
-        assert!(Plan::parse(&deleted.source).unwrap().cues.is_empty());
-        assert_eq!(
-            e.history(&deleted.revision, false).unwrap().source,
-            v.source
-        );
+        assert_eq!(p.before, v.source);
+        assert!(Plan::parse(&p.after).unwrap().cues.is_empty());
         std::fs::remove_dir_all(e.project.root).unwrap();
     }
     #[test]
-    fn stale_revisions_ranges_and_narration_changes_never_overwrite() {
-        let mut e = editor();
+    fn stale_revisions_and_bad_ranges_are_refused() {
+        let e = editor();
         let s = e.read(Document::Script).unwrap();
-        assert!(
-            e.edit_script(
-                &s.revision,
-                TextEdit {
-                    start: 13,
-                    end: 14,
-                    text: "bad".into()
-                }
-            )
-            .is_err()
-        );
-        assert!(
-            e.edit_script(
-                &s.revision,
-                TextEdit {
-                    start: usize::MAX,
-                    end: 0,
-                    text: "bad".into()
-                }
-            )
-            .is_err()
-        );
-        let updated = e
+        assert_eq!(s.revision, crate::version(&s.source));
+        for (start, end) in [(13, 14), (usize::MAX, 0)] {
+            assert!(
+                e.edit_script(
+                    &s.revision,
+                    TextEdit {
+                        start,
+                        end,
+                        text: "bad".into()
+                    }
+                )
+                .is_err()
+            );
+        }
+        let p = e
             .edit_script(
                 &s.revision,
                 TextEdit {
                     start: 0,
                     end: 0,
-                    text: "VO: Intro.\n".into(),
+                    text: "VO: Intro.
+"
+                    .into(),
                 },
             )
             .unwrap();
+        assert_eq!(p.rel, "script/script.md");
+        // Proposing writes nothing.
+        assert_eq!(e.project.read_script().unwrap(), s.source);
+        commit(&e, p);
         assert!(
             e.edit_script(
                 &s.revision,
@@ -682,9 +640,6 @@ mod tests {
             )
             .is_err()
         );
-        e.project.write_script("VO: External edit.").unwrap();
-        assert!(e.history(&updated.revision, false).is_err());
-        assert_eq!(e.project.read_script().unwrap(), "VO: External edit.");
         std::fs::remove_dir_all(e.project.root).unwrap();
     }
     #[test]
@@ -711,49 +666,8 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn simultaneous_sessions_cannot_both_commit_the_same_base_revision() {
-        let mut a = editor();
-        let root = a.project.root.clone();
-        let mut b = Editor::open(&root).unwrap();
-        let ar = a.read(Document::Script).unwrap().revision;
-        let br = b.read(Document::Script).unwrap().revision;
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
-        let second = barrier.clone();
-        let one = std::thread::spawn(move || {
-            barrier.wait();
-            a.edit_script(
-                &ar,
-                TextEdit {
-                    start: 0,
-                    end: 0,
-                    text: "VO: First.\n".into(),
-                },
-            )
-            .is_ok()
-        });
-        let two = std::thread::spawn(move || {
-            second.wait();
-            b.edit_script(
-                &br,
-                TextEdit {
-                    start: 0,
-                    end: 0,
-                    text: "VO: Second.\n".into(),
-                },
-            )
-            .is_ok()
-        });
-        assert_eq!(
-            usize::from(one.join().unwrap()) + usize::from(two.join().unwrap()),
-            1
-        );
-        let saved = std::fs::read_to_string(root.join("script/script.md")).unwrap();
-        assert!(saved.starts_with("VO: First.\nLIVE:") || saved.starts_with("VO: Second.\nLIVE:"));
-        std::fs::remove_dir_all(root).unwrap();
-    }
-    #[test]
     fn project_configuration_changes_require_a_new_session() {
-        let mut e = editor();
+        let e = editor();
         let read = e.read(Document::Script).unwrap();
         let mut changed = e.project.file.clone();
         changed.script = "script/another.md".into();
