@@ -83,14 +83,19 @@ publishes.
 
 ### 7. Media search
 
-- Needs a free, reliable media search skill. Suggested source order: the channel's
-  staples → free stock (Pexels, Pixabay, Wikimedia Commons, Internet Archive) → `yt-dlp`
-  sources → ComfyUI generation as the fallback.
-- Keep a log of used clips to avoid repeats, and tag downloads so the library grows across
-  videos. Exact shot matching is not required; footage that fits the topic is fine.
+- Skill: `media-search` in the skills repo (v0, keyless sources). Source order: the
+  shared library on `D:\SpearFia\library` → YouTube via `yt-dlp` (film, TV, games) or
+  Wikimedia Commons / Internet Archive / Openverse (real-world subjects) → unfilled, for
+  generation. Pexels and Pixabay come later with API keys.
+- Cues carry a match level (exact, subject, mood); subject is the default, so Thanos
+  from another movie fills a Thanos cue. Footage is pooled per chapter, segments are cut
+  without downloading whole videos, and `scripts/qc.py` plus a vision check reject
+  watermarks, overlays, burned-in subtitles and low quality.
+- Every file is recorded in the project's `media/manifest.jsonl` and the library index,
+  so clips are reused across videos and claims can be disputed.
 - Risk: film, TV and sports footage draws Content ID claims, and fully automated channels
-  face YouTube's reused-content monetization policy. Prefer generated graphics, Remotion
-  and licensed stock where possible.
+  face YouTube's reused-content monetization policy. Each channel's `production.md` says
+  which source classes it accepts; CrazyWhatIfs accepts short, muted fair-use clips.
 
 ### 8–9. Assembly and channel-style edit
 
@@ -105,14 +110,18 @@ publishes.
 ## Agent assignments
 
 The creator's current choice, by stage. Any capable agent can run any stage through
-Spear Fia's MCP/HTTP tools; these are preferences, not requirements.
+Spear Fia's MCP/HTTP tools; these are preferences, not requirements. Ready-to-paste
+prompts for each stage, and the MCP setup for each agent, are in [stages/](stages/README.md).
+The pilot channel is CrazyWhatIfs: hour-plus pop-culture "what if" videos with film and
+TV clips under narration and animated captions.
 
 | Stage | Agent |
 | --- | --- |
 | Channel DNA | Opus 5.5 (synthesis) with a cheaper model for collection and analysis |
 | Ideas | Gemini 3 Pro |
 | Script, Visual Script, thumbnail concept | Sonnet 5.5 |
-| Voiceover and media search | Codex (Sol 6.1) |
+| Voiceover linking | Codex (Sol 6.1) |
+| Media search (`media-search` skill) | Codex with Tera at xhigh (vision for clip checks) |
 | Assembly and style edit | Codex (Sol 6.1) with FilmCraft MCP |
 | Thumbnail and description | Sonnet 5.5 with PhotoCraft and ComfyUI |
 
