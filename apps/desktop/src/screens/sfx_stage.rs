@@ -143,11 +143,7 @@ impl SfxStage {
         let all = sfx::sfx(&parsed, &tl);
         let words = sfx::words(&parsed, &tl);
         let music_hits = hits(&tl, catalog);
-        let weights = project
-            .vision_preset()
-            .and_then(|v| spearfia_vision::preset(&v))
-            .map(|p| p.weight_map())
-            .unwrap_or_default();
+        let weights = spearfia_vision::project_weights(project);
         let mut library: Vec<(&Entry, f32)> = catalog
             .entries
             .iter()

@@ -19,13 +19,17 @@ pub struct Tab {
 impl Project {
     /// The main script first, then the other `.md` files next to it, A–Z.
     pub fn tabs(&self) -> Vec<Tab> {
-        let main = self.file.script.replace('\\', "/");
+        self.document_tabs(&self.file.script, self.name())
+    }
+
+    pub fn document_tabs(&self, main: &str, title: &str) -> Vec<Tab> {
+        let main = main.replace('\\', "/");
         let dir = Path::new(&main)
             .parent()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_default();
         let mut tabs = vec![Tab {
-            name: self.name().to_owned(),
+            name: title.to_owned(),
             rel: main.clone(),
             main: true,
         }];
@@ -62,8 +66,57 @@ impl Project {
         write_text(&self.resolve(rel), text)
     }
 
+    /// Serialize cooperating writers and compare the exact bytes under the OS lock.
+    pub fn write_doc_expected(&self, rel: &str, expected: &str, text: &str) -> Result<()> {
+        let _lock = self.edit_lock()?;
+        let current = if rel == crate::visuals::FILE {
+            self.read_visuals()?
+        } else {
+            self.read_doc(rel)?
+        };
+        if current != expected {
+            return Err(CoreError::Invalid(
+                "The document changed before saving. Read it again and reconcile your edit.".into(),
+            ));
+        }
+        write_text(&self.resolve(rel), text)
+    }
+
+    /// The project-wide OS lock cooperating writers (desktop, MCP, HTTP) hold while they
+    /// compare and save. Released when the returned file is dropped.
+    pub fn edit_lock(&self) -> Result<fs::File> {
+        let root = self
+            .root
+            .canonicalize()
+            .map_err(|e| CoreError::io(&self.root, e))?;
+        let lock_path = root.join(".spearfia-edit.lock");
+        match fs::symlink_metadata(&lock_path) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(CoreError::Invalid(
+                    "The project edit lock must be an ordinary file, not a symlink.".into(),
+                ));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(CoreError::io(&lock_path, e)),
+        }
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| CoreError::io(&lock_path, e))?;
+        lock.try_lock().map_err(|e| CoreError::Invalid(format!("Another document save is active or locking failed ({e}). Read the document and retry.")))?;
+        Ok(lock)
+    }
+
     /// Create a new tab next to the main script and return its path.
     pub fn new_tab(&self, name: &str) -> Result<String> {
+        self.new_document_tab(&self.file.script, name)
+    }
+
+    pub fn new_document_tab(&self, main: &str, name: &str) -> Result<String> {
         let clean: String = name
             .trim()
             .chars()
@@ -78,7 +131,7 @@ impl Project {
         if clean.trim().is_empty() {
             return Err(CoreError::Invalid("Give the tab a name.".into()));
         }
-        let main = self.file.script.replace('\\', "/");
+        let main = main.replace('\\', "/");
         let dir = Path::new(&main)
             .parent()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -105,6 +158,7 @@ mod tests {
 
     fn project() -> Project {
         create_project(&NewProject {
+            channel_brief: None,
             name: "Ep 1".into(),
             series: None,
             root: temp_dir("tabs").join("P"),
@@ -113,6 +167,7 @@ mod tests {
             timebase: Timebase::FPS_60,
             target_runtime_seconds: None,
             vision: NewVision {
+                template: None,
                 extends: None,
                 goal: String::new(),
                 avg_shot_seconds: None,

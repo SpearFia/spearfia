@@ -38,6 +38,7 @@ pub fn text_width(zoom: f32) -> f32 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoteKind {
     Quote,
+    Visual(spearfia_core::visuals::Role),
     Bullet,
     Numbered,
     Check(bool),
@@ -134,6 +135,9 @@ fn front_matter_lines(src: &str) -> usize {
 fn classify(body: &str, block: Option<&Block>) -> (LineStyle, usize) {
     let lead = body.len() - body.trim_start().len();
     let t = &body[lead..];
+    if t.starts_with("<!-- visual-cue ") {
+        return (LineStyle::FrontMatter, 0);
+    }
     match block {
         None => (LineStyle::Blank, 0),
         Some(Block::Divider { .. }) => (LineStyle::Divider, 0),
@@ -153,6 +157,16 @@ fn classify(body: &str, block: Option<&Block>) -> (LineStyle, usize) {
             LineKind::Live => (LineStyle::Live, kind_prefix(body).map_or(0, |(_, n)| n)),
             LineKind::OnScreen => (LineStyle::OnScreen, 0),
             LineKind::Note => {
+                if let Some(role) = spearfia_core::visuals::Role::of(t) {
+                    return (
+                        LineStyle::Note(NoteKind::Visual(role)),
+                        lead + role.prefix().len()
+                            + usize::from(
+                                t.get(role.prefix().len()..)
+                                    .is_some_and(|s| s.starts_with(' ')),
+                            ),
+                    );
+                }
                 for (p, k) in [
                     ("- [ ] ", NoteKind::Check(false)),
                     ("- [x] ", NoteKind::Check(true)),
@@ -542,10 +556,24 @@ pub fn job(
     for (n, l) in lines.iter().enumerate() {
         let reveal = look.reveal == Some(n);
         let para = para_of(src, l, &sheet);
-        let line_h = para.size * z * 1.35 * para.spacing;
+        let line_h = if src
+            .get(l.range.clone())
+            .is_some_and(|s| s.starts_with("<!-- visual-cue "))
+        {
+            44.0 * z
+        } else {
+            para.size * z * 1.35 * para.spacing
+        };
         let text = &src[l.range.clone()];
         let len = text.len();
-        let mut flags = vec![0u8; len];
+        let mut flags = vec![
+            if text.starts_with("<!-- visual-cue ") {
+                HIDE
+            } else {
+                0u8
+            };
+            len
+        ];
         let mut chip: Vec<Option<Color32>> = vec![None; len];
         let mut span_of: Vec<Option<usize>> = vec![None; len];
         let mut spans: Vec<attrs::Span> = Vec::new();
@@ -668,7 +696,7 @@ pub fn job(
                 // Hidden syntax: tiny, transparent, and letter-spaced back to ~zero width.
                 f.font_id = FontId::proportional(0.5);
                 f.color = Color32::TRANSPARENT;
-                f.line_height = None;
+                f.line_height = text.starts_with("<!-- visual-cue ").then_some(line_h);
                 f.extra_letter_spacing = -0.2;
             } else {
                 if first_visible {
@@ -1006,6 +1034,15 @@ pub fn paint_margin(
                 let y = first.center().y;
                 let x = origin.x + 8.0 * z;
                 match kind {
+                    NoteKind::Visual(role) => {
+                        painter.text(
+                            pos2(origin.x - 12.0 * z, y),
+                            egui::Align2::RIGHT_CENTER,
+                            role.prefix().trim_end_matches(':'),
+                            FontId::proportional(8.0 * z),
+                            theme::CUE_VISION,
+                        );
+                    }
                     NoteKind::Bullet => {
                         painter.circle_filled(pos2(x + 4.0 * z, y), 2.6 * z, theme::TEXT_2);
                     }

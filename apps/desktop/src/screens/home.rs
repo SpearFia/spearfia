@@ -1,7 +1,7 @@
 //! The screen the app opens on: a title bar with Projects / Catalog tabs.
 
 use crate::app::{App, HomeTab};
-use crate::screens::{catalog, projects};
+use crate::screens::{catalog, channels, projects};
 use crate::theme;
 use crate::widgets::{self, panel, text};
 use egui::{Align, Layout, Margin, Panel};
@@ -20,6 +20,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 if widgets::tab(ui, "Catalog", app.home_tab == HomeTab::Catalog).clicked() {
                     app.home_tab = HomeTab::Catalog;
                 }
+                ui.add_space(8.0);
+                if widgets::tab(ui, "Channels", app.home_tab == HomeTab::Channels).clicked() {
+                    app.home_tab = HomeTab::Channels;
+                }
                 ui.add_space(24.0);
                 brand(ui);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -31,6 +35,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     match app.home_tab {
         HomeTab::Projects => projects::show(app, ui),
         HomeTab::Catalog => catalog::show(app, ui),
+        HomeTab::Channels => channels::show(app, ui),
     }
 }
 

@@ -15,6 +15,25 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
 | [starter-pack](https://github.com/spearfia/starter-pack) | Free, license-clean starter transitions, SFX, music and presets |
 | [filmcraft](https://github.com/storytold/filmcraft) | The open-source Rust video editor Spear Fia works with |
 
+## Channel workflows
+
+Use **Channels** to edit/import reusable Markdown guides for each channel's style,
+lessons, staple assets and production tools. Choose a Channel for a new video or attach
+one through **Channel / handoff** in an existing project. Approve the saved script there
+before copying the production handoff for an agent.
+
+See [channel workflow](docs/channel-workflow.md) and [agent/CLI access](docs/agents.md).
+This release provides knowledge and approval-based handoff; it does not automatically
+run ComfyUI, VoiceStudio or FilmCraft sync.
+
+## Visual Script
+
+**Visual Script** follows Script in each project: linked narration, visual directions, production details, references, coverage/review and agent exports. See [the guide](docs/visual-script.md).
+
+## Agent editing
+
+Start `spearfia mcp --project <folder>` for MCP stdio, or `spearfia api --project <folder>` for the authenticated loopback HTTP API. Script/Visual Script edits use revision checks and undo/redo; creator approval stays in the desktop. See [setup and tool reference](docs/agents.md).
+
 ## License
 
 Licensed under either of

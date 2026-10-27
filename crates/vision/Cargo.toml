@@ -8,4 +8,5 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+serde_json.workspace = true
 spearfia-core.workspace = true
