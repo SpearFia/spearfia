@@ -80,6 +80,26 @@ enum Cmd {
         /// Project folder; defaults to `--project`.
         folder: Option<PathBuf>,
     },
+    /// Create a long-form project folder, like the desktop's New Project (1080p, 30 fps,
+    /// default media folders, Hook/Main/Outro script), optionally with a channel snapshot.
+    New {
+        /// Project name.
+        name: String,
+        /// Folder to create the project in (created if missing).
+        folder: PathBuf,
+        /// Channel ID whose guides are snapshotted into the project's channel.md.
+        #[arg(long)]
+        channel: Option<String>,
+        /// Target runtime in minutes.
+        #[arg(long)]
+        runtime: Option<u32>,
+        /// Vision goal (one line).
+        #[arg(long, default_value = "")]
+        goal: String,
+        /// Average shot length in seconds for the Vision.
+        #[arg(long, default_value_t = 3.5)]
+        avg_shot: f32,
+    },
     /// List the script's `##` sections with their VO lines, as JSON (for VO generation).
     Sections {
         /// Project folder; defaults to `--project`.
@@ -179,6 +199,30 @@ fn run(cli: &Cli) -> Result<(), String> {
                 .and_then(|cli| spearfia_adapter_filmcraft::push(&project, &cli))
                 .map_err(|e| e.to_string())?;
             print_json(fc.summary());
+            return Ok(());
+        }
+        Cmd::New {
+            name,
+            folder,
+            channel,
+            runtime,
+            goal,
+            avg_shot,
+        } => {
+            let brief = match channel {
+                Some(id) => {
+                    let config = app_state::config_dir()
+                        .ok_or("No app config folder is available; set SPEARFIA_CONFIG_DIR.")?;
+                    Some(
+                        channels::load(&config, id)
+                            .and_then(|c| c.brief())
+                            .map_err(|e| e.to_string())?,
+                    )
+                }
+                None => None,
+            };
+            let project = new_project(name, folder, brief, *runtime, goal, *avg_shot)?;
+            println!("{}", project.root.display());
             return Ok(());
         }
         Cmd::Sections { folder } => {
@@ -296,7 +340,7 @@ fn run(cli: &Cli) -> Result<(), String> {
             }
         }
         Cmd::Mcp | Cmd::Api { .. } | Cmd::Channels { .. } | Cmd::ProjectInfo { .. } => {}
-        Cmd::Visuals { .. } | Cmd::Push { .. } | Cmd::Sections { .. } => {}
+        Cmd::Visuals { .. } | Cmd::Push { .. } | Cmd::Sections { .. } | Cmd::New { .. } => {}
     }
     Ok(())
 }
@@ -343,6 +387,40 @@ fn sections(script: &spearfia_script::Script) -> Vec<serde_json::Value> {
     }
     out.retain(|s| s["index"] != 0 || s["words"] != 0);
     out
+}
+
+fn new_project(
+    name: &str,
+    folder: &Path,
+    channel_brief: Option<String>,
+    runtime_minutes: Option<u32>,
+    goal: &str,
+    avg_shot: f32,
+) -> Result<Project, String> {
+    use spearfia_core::project::{
+        Format, MediaFolder, NewProject, NewVision, ScriptStart, Timebase, create_project,
+    };
+    create_project(&NewProject {
+        name: name.to_owned(),
+        channel_brief,
+        series: None,
+        root: folder.to_owned(),
+        format: Format::LongForm,
+        resolution: Format::LongForm.default_resolution(),
+        timebase: Timebase::FPS_30,
+        target_runtime_seconds: runtime_minutes.map(|m| m * 60),
+        vision: NewVision {
+            template: None,
+            extends: None,
+            goal: goal.to_owned(),
+            avg_shot_seconds: Some(avg_shot),
+            cut_style: Some("mixed".into()),
+        },
+        script: ScriptStart::Sections,
+        media_folders: MediaFolder::defaults(),
+        filmcraft: None,
+    })
+    .map_err(|e| e.to_string())
 }
 
 fn read_channels(op: &ChannelOp, config: &Path) -> Result<String, String> {
@@ -443,6 +521,7 @@ mod tests {
             "spearfia project status",
             "spearfia visuals cue-sheet p",
             "spearfia sections p",
+            "spearfia new Episode D:/x --channel crazywhatifs --runtime 60",
             "spearfia push filmcraft p",
         ] {
             Cli::try_parse_from(args.split(' ')).unwrap_or_else(|e| panic!("{args}: {e}"));
@@ -469,6 +548,28 @@ mod tests {
         assert_eq!(out[0]["lines"][0]["text"], "Could Harry beat Thanos?");
         assert_eq!(out[0]["words"], 4);
         assert_eq!(out[1]["index"], 2);
+    }
+
+    #[test]
+    fn new_creates_a_project_with_the_channel_snapshot() {
+        let dir = std::env::temp_dir().join(format!("spearfia-cli-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = new_project(
+            "Pilot",
+            &dir,
+            Some("# Channel\n".into()),
+            Some(60),
+            "Test",
+            3.3,
+        )
+        .unwrap();
+        assert_eq!(p.name(), "Pilot");
+        assert_eq!(p.file.target_runtime_seconds, Some(3600));
+        assert_eq!(p.channel_brief().unwrap().as_deref(), Some("# Channel\n"));
+        assert!(dir.join("script/script.md").is_file() && dir.join("Music").is_dir());
+        // An existing project folder is not overwritten.
+        assert!(new_project("Again", &dir, None, None, "", 3.0).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
