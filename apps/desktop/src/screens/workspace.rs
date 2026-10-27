@@ -20,6 +20,7 @@ use spearfia_core::project::Project;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
+    Production,
     Script,
     VisualScript,
     Media,
@@ -31,7 +32,8 @@ pub enum Stage {
 }
 
 impl Stage {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
+        Self::Production,
         Self::Script,
         Self::VisualScript,
         Self::Media,
@@ -44,6 +46,7 @@ impl Stage {
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Production => "Production",
             Self::Script => "Script",
             Self::VisualScript => "Visual Script",
             Self::Media => "Media",
@@ -57,6 +60,7 @@ impl Stage {
 }
 
 pub struct Workspace {
+    pub production: super::production::Production,
     pub project: Project,
     pub stage: Stage,
     pub script: ScriptStage,
@@ -89,6 +93,7 @@ impl Workspace {
             Err(e) => (Links::default(), Some(e.to_string())),
         };
         Self {
+            production: super::production::Production::default(),
             project,
             stage: Stage::Script,
             script,
@@ -208,6 +213,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             });
         }
         match ws.stage {
+            Stage::Production => ws.production.show(ui, &ws.project, ws.script.source()),
             Stage::Script => {
                 Panel::top("script-plan-visuals").show(ui, |ui| {
                     if ui
@@ -282,7 +288,8 @@ fn nav(ui: &mut egui::Ui, stage: &mut Stage) {
         Stroke::new(1.0, theme::BORDER),
     );
     let gap = 10.0;
-    let item_w = ((full.width() - gap * 7.0) / 8.0).clamp(60.0, 108.0);
+    let count = Stage::ALL.len() as f32;
+    let item_w = ((full.width() - gap * (count - 1.0)) / count).clamp(60.0, 108.0);
     let total = Stage::ALL.len() as f32 * item_w + (Stage::ALL.len() - 1) as f32 * gap;
     let mut x = full.center().x - total / 2.0;
     for (i, s) in Stage::ALL.into_iter().enumerate() {
@@ -399,7 +406,7 @@ fn stage_icon(p: &egui::Painter, c: egui::Pos2, s: Stage, color: egui::Color32) 
                 p.add(egui::Shape::line(pts, st));
             }
         }
-        Stage::Sync => {
+        Stage::Sync | Stage::Production => {
             p.circle_stroke(c, 7.0, st);
             p.add(egui::Shape::convex_polygon(
                 vec![

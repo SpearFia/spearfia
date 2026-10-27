@@ -10,6 +10,9 @@ with `links` and `timeline-plan` from [SpearFia/spearfia-spec#5](https://github.
 
 ## Updating
 
+Production pipeline, report and run schemas additionally come from `spearfia-spec`
+commit `3b84739` on `feat/cli-production-coordinator`; see its `docs/production.md`.
+
 With both repos side by side in `C:\dev\spearfia`:
 
 ```powershell

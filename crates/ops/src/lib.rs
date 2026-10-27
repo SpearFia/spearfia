@@ -16,6 +16,7 @@
 //! Script edits are validated in `spearfia-core::editing` and applied here.
 
 pub mod links;
+pub mod production;
 pub mod timing;
 pub mod transitions;
 
@@ -273,10 +274,22 @@ fn save_log(project: &Project, rel: &str, log: &[Entry]) -> Result<()> {
 
 /// Move the newest entry of `from` back: restore its text if the document still has the
 /// version it left, and record the reverse on `to`.
-fn step(project: &Project, from: &str, to: &str, nothing: &str, verb: &str) -> Result<Entry> {
+fn step(
+    project: &Project,
+    from: &str,
+    to: &str,
+    nothing: &str,
+    verb: &str,
+    creator: bool,
+) -> Result<Entry> {
     let _lock = project.edit_lock()?;
     let mut log = load_log(project, from)?;
     let last = log.pop().ok_or_else(|| OpError::NotFound(nothing.into()))?;
+    if !creator && last.doc == production::CONFIG {
+        return Err(OpError::Invalid(
+            "Only the creator can undo or redo production assignments.".into(),
+        ));
+    }
     let current = read(project, &last.doc)?;
     if version(&current) != last.after {
         return Err(OpError::Invalid(format!(
@@ -299,12 +312,21 @@ fn step(project: &Project, from: &str, to: &str, nothing: &str, verb: &str) -> R
 /// Undo the most recent change. Refuses if its document was edited after that change, so
 /// undo never throws away someone else's later work. Returns what was undone.
 pub fn undo(project: &Project) -> Result<Entry> {
-    step(project, HISTORY, REDO, "Nothing to undo.", "undo")
+    step(project, HISTORY, REDO, "Nothing to undo.", "undo", true)
 }
 
 /// Reapply the most recently undone change, under the same rule as [`undo`].
 pub fn redo(project: &Project) -> Result<Entry> {
-    step(project, REDO, HISTORY, "Nothing to redo.", "redo")
+    step(project, REDO, HISTORY, "Nothing to redo.", "redo", true)
+}
+
+/// Agent undo uses the same lock and history, but cannot change creator assignments.
+pub fn agent_undo(project: &Project, redo: bool) -> Result<Entry> {
+    if redo {
+        step(project, REDO, HISTORY, "Nothing to redo.", "redo", false)
+    } else {
+        step(project, HISTORY, REDO, "Nothing to undo.", "undo", false)
+    }
 }
 
 #[cfg(test)]

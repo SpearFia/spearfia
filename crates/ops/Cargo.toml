@@ -13,3 +13,4 @@ serde_json.workspace = true
 similar = "3.2.0"
 spearfia-core.workspace = true
 spearfia-script.workspace = true
+spearfia-ai.workspace = true

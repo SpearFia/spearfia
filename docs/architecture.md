@@ -2,6 +2,15 @@
 
 A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
 
+## CLI production coordination
+
+`spearfia-ai` adapts noninteractive Claude Code and Codex processes. The desktop and
+`spearfia pipeline` call `spearfia-ops::production` for assignments, checkpoints, creator
+gates, output verification, cancellation and recovery. It attaches project-specific MCP
+tools without rewriting global agent settings. Agent undo cannot change creator stage
+assignments. This coordinator does not implement model-provider APIs, media analyzers,
+caption rendering, editing recipes or FilmCraft pull. See [production.md](production.md).
+
 ## One command layer
 
 Every command goes through `spearfia-ops`. A command computes a plan (new text, summary,

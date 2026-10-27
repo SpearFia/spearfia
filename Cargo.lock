@@ -2935,7 +2935,10 @@ dependencies = [
 name = "spearfia-ai"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "spearfia-core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3016,6 +3019,7 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
+ "spearfia-ai",
  "spearfia-core",
  "spearfia-script",
 ]

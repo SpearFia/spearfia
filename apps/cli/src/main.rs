@@ -30,6 +30,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Configure and run the saved CLI-agent production workflow.
+    Pipeline {
+        #[command(subcommand)]
+        op: PipelineOp,
+    },
     /// List every cut with its transition.
     Cuts,
     /// List problems to fix (for now: section changes with no transition).
@@ -100,6 +105,29 @@ enum ChannelOp {
     Read { id: String },
 }
 
+#[derive(Subcommand)]
+enum PipelineOp {
+    /// Save the default editable stage assignments (refuses an existing config).
+    Init,
+    /// Print saved stage assignments.
+    Show,
+    /// Print the current checkpoint, including reports and log folders.
+    Status,
+    /// Start a new run, archiving the previous checkpoint.
+    Start,
+    /// Continue after approval, creator review, an agent question or a failure.
+    Continue {
+        #[arg(long)]
+        accept_review: bool,
+        #[arg(long)]
+        retry: bool,
+        #[arg(long, default_value = "")]
+        reply: String,
+    },
+    /// Ask the active coordinator to stop its CLI agent and descendants.
+    Stop,
+}
+
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum ProjectAction {
     Brief,
@@ -153,6 +181,74 @@ fn run(cli: &Cli) -> Result<(), String> {
         Project::open(folder.as_deref().unwrap_or(&cli.project)).map_err(|e| e.to_string())
     };
     match &cli.cmd {
+        Cmd::Pipeline { op } => {
+            use spearfia_ops::production::{self, Action, State};
+            let project = open(&None)?;
+            let error = |e: spearfia_ops::OpError| e.to_string();
+            match op {
+                PipelineOp::Init => {
+                    if project.root.join(production::CONFIG).exists() {
+                        return Err("Pipeline exists; edit its assignments in Production or production/pipeline.json.".into());
+                    }
+                    let config = production::defaults();
+                    production::save_pipeline(
+                        &project,
+                        &config,
+                        &spearfia_ops::version(""),
+                        Origin::Cli,
+                    )
+                    .map_err(error)?;
+                    print_json(serde_json::json!(config));
+                }
+                PipelineOp::Show => print_json(serde_json::json!(
+                    production::load_pipeline(&project).map_err(error)?.0
+                )),
+                PipelineOp::Status => print_json(serde_json::json!(
+                    production::load_run(&project).map_err(error)?
+                )),
+                PipelineOp::Stop => {
+                    production::request_stop(&project).map_err(error)?;
+                    println!("Stop requested.");
+                }
+                operation => {
+                    let action = match operation {
+                        PipelineOp::Start => Action {
+                            start: true,
+                            ..Default::default()
+                        },
+                        PipelineOp::Continue {
+                            accept_review,
+                            retry,
+                            reply,
+                        } => Action {
+                            start: false,
+                            accept_review: *accept_review,
+                            retry: *retry,
+                            reply: reply.clone(),
+                        },
+                        _ => unreachable!(),
+                    };
+                    let project =
+                        Project::open(project.root.canonicalize().map_err(|e| e.to_string())?)
+                            .map_err(|e| e.to_string())?;
+                    let run = production::execute(
+                        &project,
+                        &std::env::current_exe().map_err(|e| e.to_string())?,
+                        action,
+                    )
+                    .map_err(error)?;
+                    let failed = matches!(run.state, State::Failed | State::Cancelled);
+                    print_json(serde_json::json!(run));
+                    if failed {
+                        return Err(
+                            "Production stopped. Inspect pipeline status and logs before retrying."
+                                .into(),
+                        );
+                    }
+                }
+            }
+            return Ok(());
+        }
         Cmd::Mcp => return serve_mcp(&cli.project),
         Cmd::Api { port } => return serve_api(&cli.project, *port),
         Cmd::Channels { op } => {
@@ -296,7 +392,7 @@ fn run(cli: &Cli) -> Result<(), String> {
             }
         }
         Cmd::Mcp | Cmd::Api { .. } | Cmd::Channels { .. } | Cmd::ProjectInfo { .. } => {}
-        Cmd::Visuals { .. } | Cmd::Push { .. } | Cmd::Sections { .. } => {}
+        Cmd::Visuals { .. } | Cmd::Push { .. } | Cmd::Sections { .. } | Cmd::Pipeline { .. } => {}
     }
     Ok(())
 }

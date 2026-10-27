@@ -19,7 +19,7 @@ pub mod http;
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const PROTOCOL: &str = "2025-11-25";
-const INSTRUCTIONS: &str = "Read documents before editing. Revisions are versions of the exact saved bytes; any server, the CLI and the app compute the same ones. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. No tool here launches generators, publishes or pushes FilmCraft timelines. edit_undo/edit_redo use the project's shared history (desktop, CLI and agents; script, Visual Script and links) and refuse to run over a later edit.";
+const INSTRUCTIONS: &str = "Read documents before editing. Revisions are versions of the exact saved bytes; any server, the CLI and the app compute the same ones. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. Generation uses external tools. timeline_push builds a creator-approved FilmCraft review project; no publishing tool exists. edit_undo/edit_redo use the project's shared history (desktop, CLI and agents; script, Visual Script and links) and refuse to run over a later edit.";
 fn invalid(text: impl Into<String>) -> CoreError {
     CoreError::Invalid(text.into())
 }
@@ -245,12 +245,7 @@ impl Server {
                         )));
                     }
                 }
-                let entry = if redo {
-                    spearfia_ops::redo(project)
-                } else {
-                    spearfia_ops::undo(project)
-                }
-                .map_err(op)?;
+                let entry = spearfia_ops::agent_undo(project, redo).map_err(op)?;
                 let source = spearfia_ops::read(project, &entry.doc).map_err(op)?;
                 Ok(
                     json!({"doc":entry.doc,"summary":entry.summary,"origin":entry.origin,"revision":version(&source),"source":source}),

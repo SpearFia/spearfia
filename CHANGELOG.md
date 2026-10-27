@@ -6,6 +6,14 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Production coordination
+
+- Add the Production desktop page and `spearfia pipeline` commands for configured Claude
+  Code/Codex stages, project-bound tools, saved checkpoints/replies/logs, creator review
+  gates, approval checks, independent artifact verification, stop/timeouts and explicit
+  interruption recovery. Stage assignments share the command-layer history. Windows
+  process jobs contain CLI descendants; global agent configuration is preserved.
+
 ### Audio
 
 - Media folders can have the `music` and `sfx` roles (new projects get `Music/` and `SFX/`). Their links are audio, and the FilmCraft push places music on A2 (until the next music or the end of the narration) and SFX on A3 (once, at their words), leaving voiceover timing on A1 unchanged. Review sequences get three audio tracks.

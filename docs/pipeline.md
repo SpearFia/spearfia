@@ -9,6 +9,11 @@ Fia provides for it today, and what is still missing.
 The creator's working plan lives outside this repo (an Obsidian canvas). This page is the
 version agents should follow; update it when the plan changes.
 
+The [production coordinator](production.md) can now run these stages through configured
+Claude Code/Codex CLIs, retain checkpoints/replies/logs, verify outputs and stop at creator
+gates. It relies on the installed skills and external production tools below; caption
+generation, editing recipes and FilmCraft pull remain separate work.
+
 ## Stages
 
 | # | Stage | Output | Spear Fia support | Status |
