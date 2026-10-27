@@ -283,3 +283,80 @@ fn music_and_sfx_get_their_own_tracks_and_leave_voiceover_alone() {
         "{issues:?}"
     );
 }
+
+#[test]
+fn pictures_on_the_same_words_split_their_stretch() {
+    use MediaRole::*;
+    let links = Links {
+        links: vec![
+            link("k1", "think it would help.", 1, "vo/one.wav", Voiceover, None),
+            link("k2", "almost made me quit.", 3, "broll/a.mp4", BRoll, None),
+            link("k3", "almost made me quit.", 3, "broll/b.mp4", BRoll, None),
+        ],
+        next_id: 4,
+        unreadable: Vec::new(),
+    };
+    let media = BTreeMap::from([
+        ("vo/one.wav".to_string(), Some(300)),
+        ("broll/a.mp4".to_string(), Some(1000)),
+        ("broll/b.mp4".to_string(), Some(1000)),
+    ]);
+    let (plan, issues) = compile(&spearfia_script::parse(SCRIPT), &links, &media, TB);
+    // With one voiceover link, its 300 frames cover all 14 words; "almost" is 6 in
+    // (frame 128) and the 172 frames to the end split evenly instead of k2 covering k3.
+    assert_eq!(
+        plan.items[1..3],
+        [
+            clip_at("k2", "V2", 128, 86, "broll/a.mp4", 0),
+            clip_at("k3", "V2", 214, 86, "broll/b.mp4", 0),
+        ]
+    );
+    assert!(!issues.iter().any(|i| matches!(i, Issue::Empty { .. } | Issue::Short { .. })), "{issues:?}");
+}
+
+#[test]
+fn heard_words_set_exact_times_and_unmatched_words_fill_between() {
+    let heard = vec![("Hello,".into(), 0.0), ("word".into(), 0.5), ("again".into(), 1.0)];
+    assert_eq!(align(&["hello", "world", "again"], &heard, 0, 60, TB), [0, 15, 30]);
+    // Played from frame 6: file time 1.0 s (frame 30) is span frame 24.
+    assert_eq!(align(&["hello", "world", "again"], &heard, 6, 60, TB), [0, 12, 24]);
+    // Nothing heard: even spread to the end.
+    assert_eq!(align(&["a", "b"], &[], 0, 60, TB), [20, 40]);
+}
+
+#[test]
+fn heard_words_move_pictures_and_timing_reports_them() {
+    use MediaRole::*;
+    let links = Links {
+        links: vec![
+            link("k1", "think it would help.", 1, "vo/one.wav", Voiceover, None),
+            link("k2", "almost made me quit.", 3, "broll/a.mp4", BRoll, None),
+        ],
+        next_id: 3,
+        unreadable: Vec::new(),
+    };
+    let media = BTreeMap::from([
+        ("vo/one.wav".to_string(), Some(300)),
+        ("broll/a.mp4".to_string(), Some(1000)),
+    ]);
+    let script = spearfia_script::parse(SCRIPT);
+    // "almost" heard at 8 s (frame 240) instead of the linear estimate (frame 128).
+    let words = "think it would help and it almost made me quit I'm a circuit racer";
+    let heard: Heard = BTreeMap::from([(
+        "vo/one.wav".to_string(),
+        words
+            .split(' ')
+            .enumerate()
+            .map(|(i, w)| (w.to_string(), if i < 6 { i as f64 * 0.5 } else { 8.0 + (i - 6) as f64 * 0.25 }))
+            .collect(),
+    )]);
+    let (plan, _) = compile_heard(&script, &links, &media, TB, &heard);
+    assert_eq!(plan.items[1], clip_at("k2", "V2", 240, 60, "broll/a.mp4", 0));
+    let t = Timing::new(&script, &links, &media, TB, &heard);
+    assert_eq!(t.frame_of("almost made me quit.", 3), Some(240));
+    assert_eq!(t.frame_of("ALMOST made me quit", 3), Some(240));
+    let w = t.words();
+    assert_eq!((w[6].text.as_str(), w[6].start, w[6].end), ("almost", 240, 248));
+    assert_eq!(t.sections(&script).iter().map(|s| s.1).collect::<Vec<_>>(), [0, 270]);
+    assert_eq!(t.end(), 300);
+}

@@ -12,9 +12,9 @@ earlier work.
 | 3 | Script | [03-script.md](03-script.md) | Claude or Codex |
 | 4 | Visual Script and thumbnail concept | [04-visual-script.md](04-visual-script.md) | Claude or Codex |
 | 5 | Voiceover (VoiceStudio) | [05-voiceover.md](05-voiceover.md) | Codex or Claude |
-| 6 | Media search | [06-media-search.md](06-media-search.md) | Codex, Tera xhigh |
+| 6 | Media search | [06-media-search.md](06-media-search.md) | any model with vision, medium effort |
 | 7 | Music and SFX (ComfyUI) | [07-music-sfx.md](07-music-sfx.md) | Codex or Claude |
-| 8 | Assembly | [08-assembly.md](08-assembly.md) | Codex |
+| 8 | Assembly and edit | [08-assembly.md](08-assembly.md) | any model, medium effort |
 | 9 | Thumbnail and description | [09-thumbnail.md](09-thumbnail.md) | Claude or Codex |
 
 Your gates: pick the idea after stage 2, approve the saved script in the desktop after
@@ -38,6 +38,9 @@ the FilmCraft timeline after stage 8.
   For Claude Code, add the same server with
   `claude mcp add spearfia -- C:\dev\spearfia\spearfia\target\release\spearfia.exe mcp --project D:\SpearFia\current`.
 - Rebuild the binary after pulling: `cargo build --release -p spearfia-cli`.
+- **Word timing**: faster-whisper in `D:\SpearFia\tools\whisper` (a venv with
+  `faster-whisper`, `nvidia-cublas-cu12` and `nvidia-cudnn-cu12`); the voiceover skill's
+  `vo_words.py` runs with its Python.
 
 ## Switch the current video
 

@@ -4,15 +4,37 @@
 //! Runs only on the creator-approved script. Nothing is written until FilmCraft has built
 //! every item; a failure leaves no files.
 
+use crate::edit::{self as apply, Applied, clock};
 use crate::mcp::Client;
 use serde_json::{Value, json};
 use spearfia_core::CoreError;
 use spearfia_core::error::Result;
 use spearfia_core::links::Links;
 use spearfia_core::project::{Project, Timebase, write_json};
-use spearfia_sync::{Issue, Kind, TimelinePlan, compile};
+use spearfia_core::visuals::Plan;
+use spearfia_sync::edit::{self, GeneratedCue};
+use spearfia_sync::{Heard, Issue, Kind, TimelinePlan, Timing, compile_heard};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+
+/// Push choices beyond the defaults.
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    /// Render one contact sheet per section into `sync/filmstrips/<plan_id>/`.
+    pub filmstrips: bool,
+}
+
+/// One `##` section of the pushed timeline, for a one-line-per-section report.
+#[derive(Debug, Clone)]
+pub struct Section {
+    pub title: String,
+    pub start: u64,
+    pub end: u64,
+    /// Frames of the section with no picture on V2.
+    pub picture_gap: u64,
+    /// Edit operations placed in it.
+    pub edits: usize,
+}
 
 /// FilmCraft's time unit.
 const TICKS_PER_SECOND: i128 = 254_016_000_000;
@@ -26,19 +48,71 @@ pub struct Pushed {
     pub plan: TimelinePlan,
     /// What compile skipped or shortened.
     pub issues: Vec<Issue>,
+    /// Edit script, channel rules, captions and mix as applied.
+    pub edit: Applied,
+    /// Whether heard voiceover words timed the plan (else: linear inside each voiceover).
+    pub word_timed: bool,
+    pub sections: Vec<Section>,
+    pub filmstrips: Vec<PathBuf>,
+    pub timebase: Timebase,
 }
 
 impl Pushed {
-    /// What the CLI and the MCP tool report: the review path, counts and every issue.
+    /// What the CLI and the MCP tool report: the review path, counts, one line per section and
+    /// every issue, never the timeline itself.
     pub fn summary(&self) -> Value {
         let count = |k: Kind| self.plan.items.iter().filter(|i| i.kind == k).count();
+        let tb = self.timebase;
+        let secs = |f: u64| (f * u64::from(tb.den)) as f64 / f64::from(tb.num);
+        let sections: Vec<String> = self
+            .sections
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} {} ({:.0} s): {} edits, {:.0} s without picture",
+                    clock(s.start, tb),
+                    s.title,
+                    secs(s.end - s.start),
+                    s.edits,
+                    secs(s.picture_gap)
+                )
+            })
+            .collect();
         json!({"plan_id": self.plan_id, "review": self.review, "clips": count(Kind::Clip),
-               "transitions": count(Kind::Transition), "issues": self.issues})
+               "transitions": count(Kind::Transition), "word_timed": self.word_timed,
+               "edits": self.edit.ops, "captions": self.edit.captions, "sections": sections,
+               "edit_problems": self.edit.problems, "filmstrips": self.filmstrips, "issues": self.issues})
     }
+}
+
+/// Heard words from `media/vo-words.json` (written by the voiceover skill's `vo_words.py`).
+fn heard(project: &Project) -> Heard {
+    let Ok(text) = std::fs::read_to_string(project.root.join("media").join("vo-words.json")) else {
+        return Heard::new();
+    };
+    let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+    v.as_object()
+        .into_iter()
+        .flatten()
+        .map(|(path, f)| {
+            let words = f["words"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|w| Some((w[0].as_str()?.to_string(), w[1].as_f64()?)))
+                .collect();
+            (path.clone(), words)
+        })
+        .collect()
 }
 
 /// Push `project`'s links to a new FilmCraft review project with the `filmcraft-cli` at `cli`.
 pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
+    push_with(project, cli, &Options::default())
+}
+
+/// [`push`] with options.
+pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed> {
     let plan_id = format!(
         "plan-{}",
         std::time::SystemTime::now()
@@ -91,7 +165,8 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         })
         .collect();
 
-    let (mut plan, issues) = compile(&script, &links, &media, tb);
+    let heard = heard(project);
+    let (mut plan, issues) = compile_heard(&script, &links, &media, tb, &heard);
     plan.plan_id = Some(plan_id.clone());
 
     fc.command(
@@ -122,6 +197,18 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         )?;
         clips.insert(&it.cue_id, clip);
     }
+    // Footage of any size fills the frame (FilmCraft's Scale to Frame Size on every picture).
+    let pictures: Vec<u64> = plan
+        .items
+        .iter()
+        .filter(|i| i.kind == Kind::Clip && i.track.starts_with('V'))
+        .filter_map(|i| clips.get(i.cue_id.as_str()).copied())
+        .collect();
+    if !pictures.is_empty() {
+        fc.command("timeline.select", json!({"clips": pictures, "add": false, "toggle": false}))?;
+        fc.command("clip.scaleToFrameSize", json!({}))?;
+        fc.command("edit.deselectAll", json!({}))?;
+    }
     for it in plan.items.iter().filter(|i| i.kind == Kind::Transition) {
         let params = it.params.clone().unwrap_or_default();
         let Some(&clip) = params["attach"].as_str().and_then(|a| clips.get(a)) else {
@@ -137,6 +224,75 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         fc.command("sequence.applyVideoTransition", p)?;
     }
 
+    // The edit script and the channel's rules, captions and mix, all applied here.
+    let timing = Timing::new(&script, &links, &media, tb, &heard);
+    let edit_md = std::fs::read_to_string(project.root.join("edit").join("edit.md")).ok();
+    let mut applied = Applied::default();
+    let brief = project.channel_brief()?;
+    let (style, _) = edit::merged_style(brief.as_deref(), edit_md.as_deref()).map_err(CoreError::Invalid)?;
+    let (lines, mut problems) = edit::parse(edit_md.as_deref().unwrap_or_default());
+    let generated: Vec<GeneratedCue> = project
+        .read_visuals()
+        .ok()
+        .and_then(|src| Plan::parse(&src).ok())
+        .map(|p| {
+            p.cues
+                .iter()
+                .filter(|c| c.meta.method.starts_with("Generated"))
+                .map(|c| GeneratedCue {
+                    id: c.meta.id.clone(),
+                    quote: c.meta.anchor.quote.clone(),
+                    line: c.meta.anchor.line,
+                    text: edit::cue_text(p.source.get(c.body.clone()).unwrap_or_default()),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let (ops, resolve_problems) = edit::resolve(&lines, &style, &generated, &timing, &script);
+    problems.extend(resolve_problems);
+    // Every operation with its time, for revising edit.md without reading the timeline.
+    let listing: String = ops
+        .iter()
+        .map(|o| format!("{}  {:<28} {:?}
+", clock(o.frame, tb), o.from, o.action))
+        .collect();
+    let size = [settings.resolution[0], settings.resolution[1]];
+    let mut done = apply::apply(&mut fc, project, &plan, &clips, &style, &ops, tb, size);
+    applied.ops = done.ops;
+    problems.append(&mut done.problems);
+    if style.captions.enabled {
+        match apply::captions(&mut fc, &items, &timing.words(), &style, tb) {
+            Ok(n) => applied.captions = n,
+            Err(e) => problems.push(format!("captions: {e}")),
+        }
+    }
+    if style.mix.enabled {
+        problems.extend(apply::mix(&mut fc, &plan, &clips, &style));
+    }
+    applied.problems = problems;
+
+    let starts = timing.sections(&script);
+    let sections: Vec<Section> = starts
+        .iter()
+        .enumerate()
+        .map(|(n, (title, start))| {
+            let end = starts.get(n + 1).map_or(timing.end(), |s| s.1).max(*start);
+            let covered: u64 = plan
+                .items
+                .iter()
+                .filter(|i| i.kind == Kind::Clip && i.track == "V2")
+                .map(|i| (i.start_frame + i.duration_frames).min(end).saturating_sub(i.start_frame.max(*start)))
+                .sum();
+            Section {
+                title: title.clone(),
+                start: *start,
+                end,
+                picture_gap: (end - start).saturating_sub(covered),
+                edits: ops.iter().filter(|o| o.frame >= *start && o.frame < end).count(),
+            }
+        })
+        .collect();
+
     std::fs::create_dir_all(&sync).map_err(|source| CoreError::Io {
         path: sync.clone(),
         source,
@@ -151,11 +307,24 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         &sync.join("snapshots").join(format!("{plan_id}.json")),
         &snapshot,
     )?;
+    let _ = std::fs::write(sync.join("plans").join(format!("{plan_id}.edit.txt")), listing);
+    let mut filmstrips = Vec::new();
+    if opts.filmstrips {
+        let spans: Vec<_> = sections.iter().map(|s| (s.title.clone(), s.start, s.end)).collect();
+        let (sheets, mut p) = apply::filmstrips(&mut fc, &sync.join("filmstrips").join(&plan_id), &spans, 6, tb);
+        filmstrips = sheets;
+        applied.problems.append(&mut p);
+    }
     Ok(Pushed {
         plan_id,
         review,
         plan,
         issues,
+        edit: applied,
+        word_timed: !heard.is_empty(),
+        sections,
+        filmstrips,
+        timebase: tb,
     })
 }
 
@@ -180,7 +349,7 @@ fn item_lengths(bin: &Value) -> BTreeMap<u64, (String, i64)> {
     out
 }
 
-fn ticks(frames: u64, tb: Timebase) -> i64 {
+pub(crate) fn ticks(frames: u64, tb: Timebase) -> i64 {
     (i128::from(frames) * TICKS_PER_SECOND * i128::from(tb.den) / i128::from(tb.num)) as i64
 }
 

@@ -6,9 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
+mod edit;
 pub mod mcp;
 mod push;
-pub use push::{Pushed, push};
+pub use push::{Options, Pushed, Section, push, push_with};
 
 /// The `filmcraft-cli` to push with, or an error that says how to point Spear Fia at it.
 pub fn find_cli() -> spearfia_core::error::Result<PathBuf> {

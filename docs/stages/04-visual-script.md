@@ -20,6 +20,15 @@ You plan the visuals for the current Spear Fia project (MCP server "spearfia").
 3. Text, numbers and comparisons: method "Generated artwork" with the exact on-screen text.
 4. Write one thumbnail concept and three title options in packaging.md style, as a
    Production note at the top of the Visual Script.
+5. Draft the edit script, edit/edit.md in the project folder (write the file directly).
+   Channel rules in execution.md already cover what repeats (section transitions, a card
+   for every Generated artwork cue, captions, mix); only add what's specific to this video,
+   one line per decision from this vocabulary and nothing else:
+     - section "<heading prefix>" | transition dip-to-black 0.5 | sfx whoosh -8
+     - "<exact script words>"@<line> | zoom punch-in | marker "Run ends"
+     - "<exact script words>" | card "TEXT ON SCREEN" 3 | sfx impact
+   zoom takes a recipe name from execution.md; sfx takes a file name in the project's SFX
+   folder. Aim for the show moments and verdicts, 1-3 per section, not every line.
 
 Report coverage (visuals_export cue-sheet), cues needing exact matches, and anything
 you couldn't plan.

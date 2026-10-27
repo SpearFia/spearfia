@@ -79,6 +79,9 @@ enum Cmd {
         target: PushTarget,
         /// Project folder; defaults to `--project`.
         folder: Option<PathBuf>,
+        /// Also render one contact sheet per section into sync/filmstrips/<plan_id>/.
+        #[arg(long)]
+        filmstrips: bool,
     },
     /// Create a long-form project folder, like the desktop's New Project (1080p, 30 fps,
     /// default media folders, Hook/Main/Outro script), optionally with a channel snapshot.
@@ -193,10 +196,12 @@ fn run(cli: &Cli) -> Result<(), String> {
         Cmd::Push {
             target: PushTarget::Filmcraft,
             folder,
+            filmstrips,
         } => {
             let project = open(folder)?;
+            let opts = spearfia_adapter_filmcraft::Options { filmstrips: *filmstrips };
             let fc = spearfia_adapter_filmcraft::find_cli()
-                .and_then(|cli| spearfia_adapter_filmcraft::push(&project, &cli))
+                .and_then(|cli| spearfia_adapter_filmcraft::push_with(&project, &cli, &opts))
                 .map_err(|e| e.to_string())?;
             print_json(fc.summary());
             return Ok(());
