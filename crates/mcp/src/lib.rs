@@ -19,7 +19,7 @@ pub mod http;
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 pub const MAX_FRAME: usize = 4 * 1024 * 1024;
 pub const PROTOCOL: &str = "2025-11-25";
-const INSTRUCTIONS: &str = "Read documents before editing. Revisions are versions of the exact saved bytes; any server, the CLI and the app compute the same ones. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. No tool here launches generators, publishes or pushes FilmCraft timelines. edit_undo/edit_redo use the project's shared history (desktop, CLI and agents; script, Visual Script and links) and refuse to run over a later edit.";
+const INSTRUCTIONS: &str = "Read documents before editing. Revisions are versions of the exact saved bytes; any server, the CLI and the app compute the same ones. Offsets are zero-based UTF-8 bytes with exclusive ends. Visual edits require current script and visual revisions. Read Channel/Vision context before drafting. Only the creator approves production in the desktop; there is no approval tool. Link media with media_list, then links_add using a zero-based script line and exact words from that line. Plan generation with voiceover_plan/jobs_plan, run the current stage with jobs_run, and inspect saved jobs_status. Use alignment_plan and captions_build for measured captions. Never recursively schedule job agents or bypass a creator review gate. timeline_push builds a creator-approved FilmCraft review project; no publishing tool exists. edit_undo/edit_redo use the project's shared history (desktop, CLI and agents; script, Visual Script and links) and refuse to run over a later edit.";
 fn invalid(text: impl Into<String>) -> CoreError {
     CoreError::Invalid(text.into())
 }
@@ -61,6 +61,14 @@ pub fn tools() -> Result<Value, CoreError> {
         tool("links_add","Link media files to words of the saved script. Each entry: zero-based script line, exact words from that line (punctuation included, formatting marks omitted), a file path from media_list, optional source in/out (HH:MM:SS or seconds). Role and kind come from the file's media folder; voiceover folders link audio. Entries save together or not at all; an identical existing link returns its ID.",schema(json!({"links":{"type":"array","minItems":1,"maxItems":MAX_AGENT_LINKS,"items":link}}), &["links"]),false),
         tool("links_remove","Remove one media link by its ID from links_list.",schema(json!({"id":string}), &["id"]),false),
         tool("timeline_push","Assemble a review timeline in FilmCraft from the links and the creator-approved script: voiceover sets the timing, picture fills it, :transition cues apply. Saves a new sync/review-<plan>.fcproj (never overwrites one) and returns its path, clip and transition counts, and issues (lost, missing, short or unplaced links, unmapped transitions). Refuses without approval; cannot grant it.",empty.clone(),false)
+        ,tool("jobs_status","Read planned artifact jobs, the plan revision and durable job checkpoints. No approval or uncertainty-resolution action is exposed.",empty.clone(),true)
+        ,tool("jobs_plan","Save an artifact dependency plan with revision checks. This plans jobs only; it never starts generation.",schema(json!({"expected_revision":string,"plan":serde_json::from_str::<Value>(include_str!("../../../schemas/production-jobs.schema.json")).map_err(|e|invalid(e.to_string()))?}),&["expected_revision","plan"]),false)
+        ,tool("jobs_run","Run/resume ready artifact jobs for the approved script. Reuses verified outputs and known ComfyUI IDs; never resubmits uncertain requests. Returns immediately: poll jobs_status until running=false, then inspect every requested job state.",schema(json!({"retry":{"type":"boolean"},"reply":{"type":"string","maxLength":65536},"stage":{"type":"string"}}),&[]),false)
+        ,tool("jobs_cancel","Request cancellation of the project's artifact jobs. Running external services may still finish; recorded IDs remain recoverable.",empty.clone(),false)
+        ,tool("captions_build","Build native animated-caption instructions from validated measured word alignment and the channel/project execution style. Never estimates missing word times.",empty.clone(),false)
+        ,tool("voiceover_plan","Plan one durable VoiceStudio job per saved VO section; the first is a creator-reviewed sample. Requires explicit recorded voice settings. Does not generate audio.",schema(json!({"expected_revision":string,"settings":{"type":"object","properties":{"url":{"type":"string"},"profile_id":{"type":"string"},"instruct":{"type":"string"},"language":{"type":"string"},"speed":{"type":"number","exclusiveMinimum":0},"steps":{"type":"integer","minimum":1}},"required":["url","profile_id"],"additionalProperties":false}}),&["expected_revision","settings"]),false)
+        ,tool("alignment_plan","Plan measured word alignment for registered narration audio. Correct missing words or mismatches before building captions.",schema(json!({"expected_revision":string,"url":{"type":"string"},"language":{"type":"string"}}),&["expected_revision","url"]),false)
+        ,tool("style_save","Save the executable caption, graphic recipe and audio mix profile. Read jobs_status.style_revision before editing; creator review remains a separate pipeline gate.",schema(json!({"expected_revision":string,"style":serde_json::from_str::<Value>(include_str!("../../../schemas/production-style.schema.json")).map_err(|e|invalid(e.to_string()))?}),&["expected_revision","style"]),false)
     ]}))
 }
 #[derive(Deserialize)]
@@ -156,6 +164,15 @@ pub struct Server {
     pub editor: Editor,
     initialized: bool,
     ready: bool,
+    artifact_worker: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    artifact_error: String,
+}
+impl Drop for Server {
+    fn drop(&mut self) {
+        if self.artifact_worker.is_some() {
+            let _ = spearfia_ops::production::jobs::cancel(&self.editor.project);
+        }
+    }
 }
 impl Server {
     pub fn open(root: &Path) -> Result<Self, CoreError> {
@@ -163,6 +180,8 @@ impl Server {
             editor: Editor::open(root)?,
             initialized: false,
             ready: false,
+            artifact_worker: None,
+            artifact_error: String::new(),
         })
     }
     /// Apply a validated agent edit through the command layer and return the saved document.
@@ -178,8 +197,178 @@ impl Server {
         self.editor.read(p.document)
     }
     pub fn call(&mut self, name: &str, arguments: Value) -> Result<Value, CoreError> {
+        if let Some(worker) = &self.artifact_worker {
+            match worker.try_recv() {
+                Ok(result) => {
+                    self.artifact_worker = None;
+                    self.artifact_error = result.err().unwrap_or_default();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.artifact_worker = None;
+                    self.artifact_error =
+                        "Artifact worker stopped; inspect the durable ledger.".into();
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+
         self.editor.validate_paths()?;
         match name {
+            "style_save" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    expected_revision: String,
+                    style: spearfia_ops::production::style::Style,
+                }
+                let args: Args = decode(arguments)?;
+                let revision = spearfia_ops::production::style::save(
+                    &self.editor.project,
+                    &args.style,
+                    &args.expected_revision,
+                    Origin::Agent,
+                )
+                .map_err(op)?;
+                Ok(json!({"revision":revision}))
+            }
+            "voiceover_plan" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    expected_revision: String,
+                    settings: spearfia_ops::production::planning::VoiceSettings,
+                }
+                let args: Args = decode(arguments)?;
+                let plan = spearfia_ops::production::planning::voiceover(
+                    &self.editor.project,
+                    &args.settings,
+                )
+                .map_err(op)?;
+                let revision = spearfia_ops::production::jobs::save_plan(
+                    &self.editor.project,
+                    &plan,
+                    &args.expected_revision,
+                    Origin::Agent,
+                )
+                .map_err(op)?;
+                Ok(json!({"revision":revision,"plan":plan}))
+            }
+            "alignment_plan" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    expected_revision: String,
+                    url: String,
+                    #[serde(default)]
+                    language: String,
+                }
+                let args: Args = decode(arguments)?;
+                let plan = spearfia_ops::production::planning::alignment(
+                    &self.editor.project,
+                    &args.url,
+                    &args.language,
+                )
+                .map_err(op)?;
+                let revision = spearfia_ops::production::jobs::save_plan(
+                    &self.editor.project,
+                    &plan,
+                    &args.expected_revision,
+                    Origin::Agent,
+                )
+                .map_err(op)?;
+                Ok(json!({"revision":revision,"plan":plan}))
+            }
+            "jobs_status" => {
+                let _: Empty = decode(arguments)?;
+                let project = &self.editor.project;
+                let current = spearfia_ops::read(project, spearfia_ops::production::jobs::PLAN)
+                    .map_err(op)?;
+                let plan = if current.trim().is_empty() {
+                    Value::Null
+                } else {
+                    serde_json::from_str(&current).map_err(|e| invalid(e.to_string()))?
+                };
+                let style = spearfia_ops::production::style::load_style(project)?;
+                let style_text = spearfia_ops::read(project, spearfia_ops::production::style::FILE)
+                    .map_err(op)?;
+                Ok(
+                    json!({"plan":plan,"revision":version(&current),"ledger":spearfia_ops::production::jobs::ledger(project).map_err(op)?,"style":style,"style_revision":version(&style_text),"running":self.artifact_worker.is_some()||spearfia_ops::production::jobs::is_running(project).map_err(op)?,"error":self.artifact_error}),
+                )
+            }
+            "jobs_plan" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    expected_revision: String,
+                    plan: spearfia_ops::production::jobs::Plan,
+                }
+                let args: Args = decode(arguments)?;
+                let revision = spearfia_ops::production::jobs::save_plan(
+                    &self.editor.project,
+                    &args.plan,
+                    &args.expected_revision,
+                    Origin::Agent,
+                )
+                .map_err(op)?;
+                Ok(json!({"revision":revision,"jobs":args.plan.jobs.len()}))
+            }
+            "jobs_run" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    #[serde(default)]
+                    retry: bool,
+                    #[serde(default)]
+                    reply: String,
+                    #[serde(default)]
+                    stage: Option<String>,
+                }
+                let args: Args = decode(arguments)?;
+                let cli = std::env::current_exe().map_err(|e| invalid(e.to_string()))?;
+                if self.artifact_worker.is_some()
+                    || spearfia_ops::production::jobs::is_running(&self.editor.project)
+                        .map_err(op)?
+                {
+                    return Err(invalid(
+                        "Artifact execution is already active. Poll jobs_status.",
+                    ));
+                }
+                self.editor.project.approved_script()?;
+                spearfia_ops::production::jobs::load_plan(&self.editor.project).map_err(op)?;
+                let project = self.editor.project.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::Builder::new()
+                    .name("spearfia-artifact-api".into())
+                    .spawn(move || {
+                        let result = std::panic::catch_unwind(|| {
+                            spearfia_ops::production::jobs::run_stage(
+                                &project,
+                                &cli,
+                                args.retry,
+                                &args.reply,
+                                args.stage.as_deref(),
+                            )
+                        })
+                        .map_err(|_| "Artifact worker failed; inspect the ledger.".to_owned())
+                        .and_then(|r| r.map(|_| ()).map_err(|e| e.to_string()));
+                        let _ = tx.send(result);
+                    })
+                    .map_err(|e| invalid(e.to_string()))?;
+                self.artifact_worker = Some(rx);
+                self.artifact_error.clear();
+                Ok(
+                    json!({"started":true,"poll":"jobs_status","message":"Poll jobs_status until running is false, then inspect every requested job state. Cancellation remains available while services run."}),
+                )
+            }
+            "jobs_cancel" => {
+                let _: Empty = decode(arguments)?;
+                spearfia_ops::production::jobs::cancel(&self.editor.project).map_err(op)?;
+                Ok(json!({"requested":true}))
+            }
+            "captions_build" => {
+                let _: Empty = decode(arguments)?;
+                spearfia_ops::production::style::build_captions(&self.editor.project).map_err(op)
+            }
             "project_context" => {
                 let _: Empty = decode(arguments)?;
                 Ok(
@@ -245,12 +434,7 @@ impl Server {
                         )));
                     }
                 }
-                let entry = if redo {
-                    spearfia_ops::redo(project)
-                } else {
-                    spearfia_ops::undo(project)
-                }
-                .map_err(op)?;
+                let entry = spearfia_ops::agent_undo(project, redo).map_err(op)?;
                 let source = spearfia_ops::read(project, &entry.doc).map_err(op)?;
                 Ok(
                     json!({"doc":entry.doc,"summary":entry.summary,"origin":entry.origin,"revision":version(&source),"source":source}),
@@ -490,6 +674,14 @@ pub fn known_tool(name: &str) -> bool {
         "links_add",
         "links_remove",
         "timeline_push",
+        "jobs_status",
+        "jobs_plan",
+        "jobs_run",
+        "jobs_cancel",
+        "captions_build",
+        "voiceover_plan",
+        "alignment_plan",
+        "style_save",
     ]
     .contains(&name)
 }
@@ -572,6 +764,40 @@ mod tests {
         Server::open(&root).unwrap()
     }
     #[test]
+    fn artifact_execution_returns_immediately_and_remains_cancellable() {
+        let mut s = server();
+        let p = &s.editor.project;
+        p.set_channel_brief(None, "# Test channel\nProduce original explanations.")
+            .unwrap();
+        p.approve_script(&p.read_script().unwrap()).unwrap();
+        let plan: spearfia_ops::production::jobs::Plan=serde_json::from_value(json!({"spec_version":1,"jobs":[{"id":"slow","title":"Slow local job","stage":"test","depends_on":[],"inputs":[],"checks":[],"task":{"adapter":"command","program":"python","args":["-c","import time;time.sleep(20)"],"outputs":[{"path":"production/result.txt","kind":"text"}]}}]})).unwrap();
+        spearfia_ops::production::jobs::save_plan(p, &plan, &version(""), Origin::Cli).unwrap();
+        let start = std::time::Instant::now();
+        let result = s.call("jobs_run", json!({})).unwrap();
+        assert_eq!(result["started"], true);
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+        for _ in 0..100 {
+            if spearfia_ops::production::jobs::is_running(&s.editor.project).unwrap() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(s.call("jobs_cancel", json!({})).unwrap()["requested"], true);
+        let mut finished = false;
+        for _ in 0..300 {
+            let status = s.call("jobs_status", json!({})).unwrap();
+            if status["running"] == false {
+                finished = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            finished,
+            "Cancellation must remain available during long-running service work"
+        );
+    }
+    #[test]
     fn stdio_handshake_tools_errors_and_notifications_follow_protocol() {
         let mut s = server();
         let messages = [
@@ -595,14 +821,14 @@ mod tests {
         assert_eq!(responses[0]["result"]["protocolVersion"], PROTOCOL);
         assert_eq!(
             responses[1]["result"]["tools"].as_array().unwrap().len(),
-            15
+            23
         );
         assert_eq!(responses[2]["result"]["isError"], true);
         assert_eq!(
             s.editor.project.read_script().unwrap(),
             "VO: Hello world.\n"
         );
-        std::fs::remove_dir_all(s.editor.project.root).unwrap();
+        std::fs::remove_dir_all(&s.editor.project.root).unwrap();
     }
     #[test]
     fn malformed_frames_and_hostile_arguments_do_not_kill_the_server() {
@@ -624,11 +850,11 @@ mod tests {
             assert!(s.call("document_edit", args).is_err());
         }
         assert!(!known_tool("approve_script"));
-        std::fs::remove_dir_all(s.editor.project.root).unwrap();
+        std::fs::remove_dir_all(&s.editor.project.root).unwrap();
     }
     #[test]
     fn agents_link_media_without_losing_desktop_links() {
-        let root = server().editor.project.root;
+        let root = server().editor.project.root.clone();
         std::fs::write(
             root.join("project.json"),
             r#"{"name":"Test","spec_version":1,"adapter":"filmcraft","media_folders":[{"path":"VO","role":"voiceover"},{"path":"B-roll","role":"b-roll"}]}"#,

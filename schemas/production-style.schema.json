@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/production-style/v1.json",
+  "title": "Spear Fia production-style",
+  "type": "object",
+  "properties": {
+    "spec_version": {
+      "const": 1
+    },
+    "captions": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "font": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "color": {
+          "type": "string"
+        },
+        "accent": {
+          "type": "string"
+        },
+        "position": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "max_words": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "words_per_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_gap_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pop_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mode": {
+          "enum": [
+            "group",
+            "word"
+          ]
+        },
+        "emphasis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outline": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "additionalProperties": true
+    },
+    "mix": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "voice_db": {
+          "type": "number"
+        },
+        "music_db": {
+          "type": "number"
+        },
+        "sfx_db": {
+          "type": "number"
+        },
+        "fade_seconds": {
+          "type": "number"
+        },
+        "duck_db": {
+          "type": "number"
+        },
+        "attack_seconds": {
+          "type": "number"
+        },
+        "release_seconds": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "additionalProperties": true
+    },
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "steps"
+        ],
+        "properties": {
+          "$schema": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "requires": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Analysis kind the whole recipe needs"
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "use"
+              ],
+              "properties": {
+                "use": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?)?#[a-z0-9][a-z0-9.-]*$",
+                  "description": "<asset>#<capability>, e.g. spearfia/focus-loupe#pip.face-circle"
+                },
+                "target": {
+                  "type": "string",
+                  "description": "Which input/track the step applies to"
+                },
+                "with": {
+                  "type": "object",
+                  "description": "Input values for the capability"
+                }
+              },
+              "additionalProperties": true
+            },
+            "minItems": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "spec_version",
+    "captions",
+    "mix",
+    "recipes"
+  ],
+  "additionalProperties": true
+}

@@ -36,10 +36,14 @@ impl Probe {
 /// Length of an audio file: read from a WAV header, otherwise asked of `ffprobe` (if it's
 /// installed). `None` when neither works.
 pub fn audio_seconds(path: &Path) -> Option<f32> {
+    audio_seconds_precise(path).map(|s| s as f32)
+}
+/// Preserve source duration precision for rational-rate frame placement.
+pub fn audio_seconds_precise(path: &Path) -> Option<f64> {
     wav_seconds(path).or_else(|| ffprobe_seconds(path))
 }
 
-fn wav_seconds(path: &Path) -> Option<f32> {
+fn wav_seconds(path: &Path) -> Option<f64> {
     use std::io::Read;
     let mut head = vec![0u8; 64 * 1024];
     let n = std::fs::File::open(path).ok()?.read(&mut head).ok()?;
@@ -61,7 +65,7 @@ fn wav_seconds(path: &Path) -> Option<f32> {
                 } else {
                     size
                 };
-                return byte_rate.filter(|r| *r > 0).map(|r| data as f32 / r as f32);
+                return byte_rate.filter(|r| *r > 0).map(|r| data as f64 / r as f64);
             }
             _ => {}
         }
@@ -70,7 +74,7 @@ fn wav_seconds(path: &Path) -> Option<f32> {
     None
 }
 
-fn ffprobe_seconds(path: &Path) -> Option<f32> {
+fn ffprobe_seconds(path: &Path) -> Option<f64> {
     let out = std::process::Command::new("ffprobe")
         .args([
             "-v",

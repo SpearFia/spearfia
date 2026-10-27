@@ -55,7 +55,11 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         )));
     }
     // The creator's approval gates every entry point (CLI, MCP, desktop) here.
-    let script = spearfia_script::parse(&project.approved_script()?);
+    let approved_source = project.approved_script()?;
+    let script = spearfia_script::parse(&approved_source);
+    let visual_source = project.read_visuals()?;
+    let style_source = serde_json::to_value(spearfia_sync::render::load_style(project)?)
+        .map_err(|e| CoreError::Invalid(e.to_string()))?;
     let links = Links::load(project)?;
     let settings = &project.file.settings;
     let tb = settings.timebase;
@@ -91,13 +95,40 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         })
         .collect();
 
-    let (mut plan, issues) = compile(&script, &links, &media, tb);
+    let need_timing = spearfia_sync::render::needs_timing(project)?;
+    let aligned = if need_timing {
+        spearfia_analysis::timeline_words(project, &links, tb)?
+    } else {
+        Vec::new()
+    };
+    let (mut plan, issues) = if need_timing {
+        let positions = aligned
+            .iter()
+            .map(|w| ((w.line, w.word), w.start_frame))
+            .collect();
+        spearfia_sync::compile_measured(&script, &links, &media, tb, &positions)
+    } else {
+        compile(&script, &links, &media, tb)
+    };
+    let execution = spearfia_sync::render::compile(project, &mut plan, &aligned)?;
+    let graphics_track = execution
+        .graphics
+        .iter()
+        .map(|g| g.layer.track)
+        .max()
+        .unwrap_or(3)
+        .max(3);
+    let video_tracks = if execution.captions.is_empty() {
+        graphics_track
+    } else {
+        graphics_track + 1
+    };
     plan.plan_id = Some(plan_id.clone());
 
     fc.command(
         "file.newSequence",
         json!({"name": project.name(), "width": settings.resolution[0], "height": settings.resolution[1],
-               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": 3, "audio": 3}),
+               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": video_tracks, "audio": 3}),
     )?;
     let mut clips: BTreeMap<&str, u64> = BTreeMap::new();
     for it in plan.items.iter().filter(|i| i.kind == Kind::Clip) {
@@ -137,6 +168,27 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
         fc.command("sequence.applyVideoTransition", p)?;
     }
 
+    super::render::apply(
+        &mut fc,
+        project,
+        &plan,
+        &execution,
+        &clips,
+        video_tracks,
+        &aligned,
+    )?;
+
+    let current = Project::open(project.root.clone())?;
+    if current.approved_script()? != approved_source
+        || current.read_visuals()? != visual_source
+        || current.file.settings != project.file.settings
+        || serde_json::to_value(spearfia_sync::render::load_style(&current)?)
+            .map_err(|e| CoreError::Invalid(e.to_string()))?
+            != style_source
+        || serde_json::to_value(Links::load(&current)?).ok() != serde_json::to_value(&links).ok()
+    {
+        return Err(CoreError::Invalid("Production inputs changed during FilmCraft assembly; no review was saved. Rebuild from the current approved files.".into()));
+    }
     std::fs::create_dir_all(&sync).map_err(|source| CoreError::Io {
         path: sync.clone(),
         source,
@@ -147,6 +199,10 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
     fc.command("file.saveAs", json!({"path": review_str}))?;
     let snapshot = fc.tool("sequence_inspect", json!({}))?;
     write_json(&sync.join("plans").join(format!("{plan_id}.json")), &plan)?;
+    write_json(
+        &sync.join("render-plans").join(format!("{plan_id}.json")),
+        &execution,
+    )?;
     write_json(
         &sync.join("snapshots").join(format!("{plan_id}.json")),
         &snapshot,

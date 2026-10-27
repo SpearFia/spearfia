@@ -55,6 +55,10 @@ New-Item -ItemType Junction -Path 'D:\SpearFia\current' -Target $episode
 
 ## Using a prompt
 
+These prompts also describe the tasks automated by the desktop **Production** page and
+`spearfia pipeline`. See [the coordinator guide](../production.md) for saved model
+assignments, review gates and recovery. Manual prompt entry remains available.
+
 Paste the block from the stage file into the agent, filling the `<…>` parts. Each prompt
 ends with a report; read it before starting the next stage. If an agent says it's blocked
 (no approval, missing tool, unfilled cues), fix that first rather than pushing on.

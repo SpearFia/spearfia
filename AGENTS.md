@@ -9,6 +9,8 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
 - `crates/<name>/`: `spearfia-<name>` libraries: `core` (project model, files), `ops` (the
   command layer: plans, version checks, history and undo),
   `script`, `catalog` (`src/sources/`), `vision`, `analysis`, `sync`, `ai`, `mcp`.
+  `ai` contains noninteractive Claude Code/Codex CLI adapters; `ops::production` is the
+  shared coordinator. See `docs/production.md` for persisted runs and creator gates.
 - `crates/adapters/filmcraft/`: `spearfia-adapter-filmcraft`. A `resolve/` adapter comes later.
 - `schemas/`: pinned copy of `spearfia-spec` schemas. Don't edit here; see `schemas/README.md`.
 - `examples/sample-project/`: a minimal project folder.

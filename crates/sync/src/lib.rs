@@ -10,6 +10,7 @@ use spearfia_core::links::{self, Link, LinkKind, Links};
 use spearfia_core::project::{MediaRole, Timebase};
 use spearfia_script::{Block, Directive, Script, Segment, format::line_words};
 use std::collections::BTreeMap;
+pub mod render;
 
 /// The crate name, used in logs and analyzer/version stamps.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
@@ -125,6 +126,39 @@ pub fn compile(
     media: &BTreeMap<String, Option<u64>>,
     timebase: Timebase,
 ) -> (TimelinePlan, Vec<Issue>) {
+    compile_inner(script, links, media, timebase, None)
+}
+
+pub fn compile_measured(
+    script: &Script,
+    links: &Links,
+    media: &BTreeMap<String, Option<u64>>,
+    timebase: Timebase,
+    positions: &BTreeMap<(usize, usize), u64>,
+) -> (TimelinePlan, Vec<Issue>) {
+    // Public alignment keys use source line numbers; link positions use indexes
+    // into the non-heading lines. Convert once, including scripts with blank lines.
+    let lines = Words::new(script);
+    let indexed = positions
+        .iter()
+        .filter_map(|(&(line, word), &frame)| {
+            lines
+                .lines
+                .iter()
+                .position(|(l, _)| *l == line)
+                .map(|i| ((i, word), frame))
+        })
+        .collect();
+    compile_inner(script, links, media, timebase, Some(&indexed))
+}
+
+fn compile_inner(
+    script: &Script,
+    links: &Links,
+    media: &BTreeMap<String, Option<u64>>,
+    timebase: Timebase,
+    positions: Option<&BTreeMap<(usize, usize), u64>>,
+) -> (TimelinePlan, Vec<Issue>) {
     let words = Words::new(script);
     let mut issues = Vec::new();
 
@@ -209,7 +243,7 @@ pub fn compile(
     let mut slots = Vec::new();
     for p in &pictures {
         let audio = matches!(p.link.role, MediaRole::Music | MediaRole::Sfx);
-        match time_at(&spans, &words, p.key) {
+        match time_at(&spans, &words, p.key, positions) {
             Some((t, s)) => slots.push((
                 track_for(p.link.role),
                 t,
@@ -273,7 +307,7 @@ pub fn compile(
                 continue;
             }
         };
-        let to = time_at(&spans, &words, key)
+        let to = time_at(&spans, &words, key, positions)
             .and_then(|(t, _)| placed.iter().find(|c| c.start_frame >= t));
         let (Some(id), Some(to)) = (&cue.id, to) else {
             issues.push(unmapped());
@@ -411,8 +445,19 @@ impl<'a> Words<'a> {
 /// Sequence frame for a script position: its voiceover span's start, plus the span's length
 /// in proportion to the spoken words before the position.
 // shortcut: linear word timing inside a span; use transcript word times once analysis has them.
-fn time_at<'s>(spans: &'s [Span], words: &Words, key: (usize, usize)) -> Option<(u64, &'s Span)> {
+fn time_at<'s>(
+    spans: &'s [Span],
+    words: &Words,
+    key: (usize, usize),
+    positions: Option<&BTreeMap<(usize, usize), u64>>,
+) -> Option<(u64, &'s Span)> {
     let s = spans.iter().rev().find(|s| s.key <= key)?;
+    if let Some(positions) = positions {
+        return positions
+            .get(&key)
+            .or_else(|| positions.range(key..).next().map(|(_, t)| t))
+            .map(|t| (*t, s));
+    }
     let into = words.pos(key).saturating_sub(s.pos).min(s.words);
     let offset = (s.len * into).checked_div(s.words).unwrap_or(0);
     Some((s.start + offset, s))

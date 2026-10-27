@@ -1,6 +1,6 @@
 [package]
 name = "spearfia-ai"
-description = "AI providers (local models or bring-your-own key) and the tool definitions the models call."
+description = "Noninteractive Claude Code and Codex CLI adapters for production stages"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,8 @@ repository.workspace = true
 
 [dependencies]
 spearfia-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

@@ -1,5 +1,7 @@
 # Rust
 target/
+__pycache__/
+*.pyc
 
 # Editors / OS
 .vscode/*

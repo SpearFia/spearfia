@@ -8,6 +8,7 @@ pub mod home;
 pub mod media_stage;
 pub mod music_stage;
 pub mod new_project;
+pub mod production;
 pub mod projects;
 pub mod script_stage;
 pub mod sfx_stage;

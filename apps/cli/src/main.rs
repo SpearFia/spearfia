@@ -30,6 +30,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Plan, run, inspect and recover production artifact jobs.
+    Jobs {
+        #[command(subcommand)]
+        op: JobsOp,
+    },
+    /// Validate or save channel-specific executable style.
+    Style {
+        #[command(subcommand)]
+        op: StyleOp,
+    },
+    /// Build animated-caption instructions from measured word timing.
+    Captions,
+    /// Configure and run the saved CLI-agent production workflow.
+    Pipeline {
+        #[command(subcommand)]
+        op: PipelineOp,
+    },
     /// List every cut with its transition.
     Cuts,
     /// List problems to fix (for now: section changes with no transition).
@@ -100,6 +117,72 @@ enum ChannelOp {
     Read { id: String },
 }
 
+#[derive(Subcommand)]
+enum JobsOp {
+    /// Plan one durable narration job per VO section with an explicit voice profile.
+    Voiceover {
+        settings: PathBuf,
+    },
+    /// Plan measured word transcription for every registered narration take.
+    Alignment {
+        #[arg(long, default_value = "http://127.0.0.1:3900")]
+        url: String,
+        #[arg(long, default_value = "auto")]
+        language: String,
+    },
+    Plan {
+        file: PathBuf,
+        #[arg(long)]
+        expect: Option<String>,
+    },
+    Status,
+    Run {
+        #[arg(long)]
+        retry: bool,
+        #[arg(long, default_value = "")]
+        reply: String,
+        #[arg(long)]
+        stage: Option<String>,
+    },
+    Cancel,
+    /// Allow a fresh attempt after checking an uncertain service submission.
+    Resolve {
+        id: String,
+    },
+}
+#[derive(Subcommand)]
+enum StyleOp {
+    Init,
+    Show,
+    Validate {
+        #[arg(long)]
+        file: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum PipelineOp {
+    /// Save the default editable stage assignments (refuses an existing config).
+    Init,
+    /// Print saved stage assignments.
+    Show,
+    /// Print the current checkpoint, including reports and log folders.
+    Status,
+    /// Start a new run, archiving the previous checkpoint.
+    Start,
+    /// Continue after approval, creator review, an agent question or a failure.
+    Continue {
+        #[arg(long)]
+        accept_review: bool,
+        #[arg(long)]
+        retry: bool,
+        #[arg(long, default_value = "")]
+        reply: String,
+    },
+    /// Ask the active coordinator to stop its CLI agent and descendants.
+    Stop,
+}
+
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum ProjectAction {
     Brief,
@@ -153,6 +236,196 @@ fn run(cli: &Cli) -> Result<(), String> {
         Project::open(folder.as_deref().unwrap_or(&cli.project)).map_err(|e| e.to_string())
     };
     match &cli.cmd {
+        Cmd::Jobs { op } => {
+            use spearfia_ops::production::jobs;
+            let project = open(&None)?;
+            let error = |e: spearfia_ops::OpError| e.to_string();
+            match op {
+                JobsOp::Voiceover { settings } => {
+                    let settings = spearfia_core::channels::read_limited(settings, 1024 * 1024)
+                        .map_err(|e| e.to_string())?;
+                    let settings = serde_json::from_str(&settings)
+                        .map_err(|e| format!("Invalid voice settings: {e}"))?;
+                    let plan = spearfia_ops::production::planning::voiceover(&project, &settings)
+                        .map_err(error)?;
+                    let current = spearfia_ops::read(&project, jobs::PLAN).map_err(error)?;
+                    let revision = jobs::save_plan(
+                        &project,
+                        &plan,
+                        &spearfia_ops::version(&current),
+                        Origin::Cli,
+                    )
+                    .map_err(error)?;
+                    print_json(serde_json::json!({"revision":revision,"plan":plan}));
+                }
+                JobsOp::Alignment { url, language } => {
+                    let plan =
+                        spearfia_ops::production::planning::alignment(&project, url, language)
+                            .map_err(error)?;
+                    let current = spearfia_ops::read(&project, jobs::PLAN).map_err(error)?;
+                    let revision = jobs::save_plan(
+                        &project,
+                        &plan,
+                        &spearfia_ops::version(&current),
+                        Origin::Cli,
+                    )
+                    .map_err(error)?;
+                    print_json(serde_json::json!({"revision":revision,"plan":plan}));
+                }
+                JobsOp::Plan { file, expect } => {
+                    let source = spearfia_core::channels::read_limited(file, 8 * 1024 * 1024)
+                        .map_err(|e| e.to_string())?;
+                    let plan: jobs::Plan =
+                        serde_json::from_str(&source).map_err(|e| e.to_string())?;
+                    let current = spearfia_ops::read(&project, jobs::PLAN).map_err(error)?;
+                    let expected = expect
+                        .clone()
+                        .unwrap_or_else(|| spearfia_ops::version(&current));
+                    let revision =
+                        jobs::save_plan(&project, &plan, &expected, Origin::Cli).map_err(error)?;
+                    print_json(serde_json::json!({"revision":revision,"plan":plan}));
+                }
+                JobsOp::Status => {
+                    print_json(serde_json::json!(jobs::ledger(&project).map_err(error)?))
+                }
+                JobsOp::Run {
+                    retry,
+                    reply,
+                    stage,
+                } => {
+                    let state = jobs::run_stage(
+                        &project,
+                        &std::env::current_exe().map_err(|e| e.to_string())?,
+                        *retry,
+                        reply,
+                        stage.as_deref(),
+                    )
+                    .map_err(error)?;
+                    let plan = jobs::load_plan(&project).map_err(error)?.0;
+                    let unfinished = state.jobs.iter().any(|r| {
+                        r.state != jobs::Status::Complete
+                            && plan.jobs.iter().any(|j| {
+                                j.id == r.id && stage.as_ref().is_none_or(|s| s == &j.stage)
+                            })
+                    });
+                    print_json(serde_json::json!(state));
+                    if unfinished {
+                        return Err("Artifact jobs remain unfinished; inspect jobs status.".into());
+                    }
+                }
+                JobsOp::Cancel => jobs::cancel(&project).map_err(error)?,
+                JobsOp::Resolve { id } => jobs::retry_uncertain(&project, id).map_err(error)?,
+            }
+            return Ok(());
+        }
+        Cmd::Style { op } => {
+            use spearfia_ops::production::style;
+            let project = open(&None)?;
+            let error = |e: spearfia_ops::OpError| e.to_string();
+            let result = match op {
+                StyleOp::Init => {
+                    if project.root.join(style::FILE).exists() {
+                        return Err("Project execution style already exists.".into());
+                    }
+                    let mut style = style::Style::default();
+                    style.captions.enabled = true;
+                    style.mix.enabled = true;
+                    style::save(&project, &style, &spearfia_ops::version(""), Origin::Cli)
+                        .map_err(error)?;
+                    style
+                }
+                StyleOp::Show => style::load_style(&project).map_err(|e| e.to_string())?,
+                StyleOp::Validate { file } => {
+                    if let Some(file) = file {
+                        style::Style::parse(
+                            &spearfia_core::channels::read_limited(file, 1024 * 1024)
+                                .map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string())?
+                    } else {
+                        style::load_style(&project).map_err(|e| e.to_string())?
+                    }
+                }
+            };
+            print_json(serde_json::json!(result));
+            return Ok(());
+        }
+        Cmd::Captions => {
+            let project = open(&None)?;
+            print_json(
+                spearfia_ops::production::style::build_captions(&project)
+                    .map_err(|e| e.to_string())?,
+            );
+            return Ok(());
+        }
+        Cmd::Pipeline { op } => {
+            use spearfia_ops::production::{self, Action, State};
+            let project = open(&None)?;
+            let error = |e: spearfia_ops::OpError| e.to_string();
+            match op {
+                PipelineOp::Init => {
+                    if project.root.join(production::CONFIG).exists() {
+                        return Err("Pipeline exists; edit its assignments in Production or production/pipeline.json.".into());
+                    }
+                    let config = production::defaults();
+                    production::save_pipeline(
+                        &project,
+                        &config,
+                        &spearfia_ops::version(""),
+                        Origin::Cli,
+                    )
+                    .map_err(error)?;
+                    print_json(serde_json::json!(config));
+                }
+                PipelineOp::Show => print_json(serde_json::json!(
+                    production::load_pipeline(&project).map_err(error)?.0
+                )),
+                PipelineOp::Status => print_json(serde_json::json!(
+                    production::load_run(&project).map_err(error)?
+                )),
+                PipelineOp::Stop => {
+                    production::request_stop(&project).map_err(error)?;
+                    println!("Stop requested.");
+                }
+                operation => {
+                    let action = match operation {
+                        PipelineOp::Start => Action {
+                            start: true,
+                            ..Default::default()
+                        },
+                        PipelineOp::Continue {
+                            accept_review,
+                            retry,
+                            reply,
+                        } => Action {
+                            start: false,
+                            accept_review: *accept_review,
+                            retry: *retry,
+                            reply: reply.clone(),
+                        },
+                        _ => unreachable!(),
+                    };
+                    let project =
+                        Project::open(project.root.canonicalize().map_err(|e| e.to_string())?)
+                            .map_err(|e| e.to_string())?;
+                    let run = production::execute(
+                        &project,
+                        &std::env::current_exe().map_err(|e| e.to_string())?,
+                        action,
+                    )
+                    .map_err(error)?;
+                    let failed = matches!(run.state, State::Failed | State::Cancelled);
+                    print_json(serde_json::json!(run));
+                    if failed {
+                        return Err(
+                            "Production stopped. Inspect pipeline status and logs before retrying."
+                                .into(),
+                        );
+                    }
+                }
+            }
+            return Ok(());
+        }
         Cmd::Mcp => return serve_mcp(&cli.project),
         Cmd::Api { port } => return serve_api(&cli.project, *port),
         Cmd::Channels { op } => {
@@ -296,7 +569,13 @@ fn run(cli: &Cli) -> Result<(), String> {
             }
         }
         Cmd::Mcp | Cmd::Api { .. } | Cmd::Channels { .. } | Cmd::ProjectInfo { .. } => {}
-        Cmd::Visuals { .. } | Cmd::Push { .. } | Cmd::Sections { .. } => {}
+        Cmd::Visuals { .. }
+        | Cmd::Push { .. }
+        | Cmd::Sections { .. }
+        | Cmd::Pipeline { .. }
+        | Cmd::Jobs { .. }
+        | Cmd::Style { .. }
+        | Cmd::Captions => {}
     }
     Ok(())
 }

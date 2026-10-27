@@ -6,6 +6,30 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Production execution
+
+- Word alignment tolerates transcription errors: exact words anchor timing, filler is
+  skipped, and short misheard runs (names, numbers) are placed between measured neighbours
+  and flagged `estimated`, within fixed limits. Takes that diverge further still fail.
+- Pipeline agents gain `network` and `writable_dirs`. Codex runs get network access and
+  `--add-dir` only when a stage asks; the default channel-DNA and media-search stages do,
+  for `D:\SpearFia\dna-study` and `D:\SpearFia\library` (Windows).
+- Add durable artifact DAG jobs with fingerprints, saved service identities, cancellation,
+  reconciliation, per-job retries, verified download reuse and media registration. Add
+  VoiceStudio/ComfyUI/alignment adapters, CLI planning and asynchronous MCP/HTTP tools.
+- Add strict measured word alignment, channel-specific animated native captions, scoped
+  graphics/overlays/effects/recipes/camera moves, and FilmCraft gains/fades/ducking.
+- Extend Production with artifact status and creator-only uncertainty resolution. Add
+  native FilmCraft save/reopen tests and local service-contract/recovery tests.
+
+### Production coordination
+
+- Add the Production desktop page and `spearfia pipeline` commands for configured Claude
+  Code/Codex stages, project-bound tools, saved checkpoints/replies/logs, creator review
+  gates, approval checks, independent artifact verification, stop/timeouts and explicit
+  interruption recovery. Stage assignments share the command-layer history. Windows
+  process jobs contain CLI descendants; global agent configuration is preserved.
+
 ### Audio
 
 - Media folders can have the `music` and `sfx` roles (new projects get `Music/` and `SFX/`). Their links are audio, and the FilmCraft push places music on A2 (until the next music or the end of the narration) and SFX on A3 (once, at their words), leaving voiceover timing on A1 unchanged. Review sequences get three audio tracks.
@@ -32,7 +56,6 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   optional editing stages and FilmCraft review, distinguishing implemented features from
   external integrations and remaining scaffolds.
 
-
 ### Media folders
 
 - Copy files from Explorer into a highlighted media folder. Create folders, drag files
@@ -47,14 +70,12 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names and reveal/highlight their files in the media sidebar. Multi-line linking saves
   all anchors together and keeps the existing links.json format.
 
-
 ### Vision catalog
 
 - Catalog → Kind → Vision shows built-in and custom creative briefs. Copy an AI prompt
   to turn channel-analysis notes and your requirements into validated vision JSON, then
   paste or import it. Saved templates are available in New Project and catalog ranking;
   projects embed their rules, references, pacing and weights for portability.
-
 
 ### Added
 

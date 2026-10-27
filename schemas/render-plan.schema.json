@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/render-plan/v1.json",
+  "title": "Spear Fia render-plan",
+  "type": "object",
+  "properties": {
+    "spec_version": {
+      "const": 1
+    },
+    "graphics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "start_frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_frames": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "layer": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "text",
+                  "shape",
+                  "media"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "track": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 16
+              },
+              "position": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "size": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "font": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number"
+              },
+              "color": {
+                "type": "string"
+              },
+              "shape": {
+                "enum": [
+                  "rectangle",
+                  "ellipse"
+                ]
+              },
+              "opacity": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "start_frame",
+          "duration_frames",
+          "layer"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "object",
+            "properties": {
+              "effect": {
+                "type": "string"
+              },
+              "params": {
+                "type": "object"
+              },
+              "keyframes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "param": {
+                      "type": "string"
+                    },
+                    "frame": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "param",
+                    "frame",
+                    "value"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            },
+            "required": [
+              "effect"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "target",
+          "effect"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "captions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "start_frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_frames": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          },
+          "active_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_end": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "start_frame",
+          "duration_frames",
+          "text",
+          "active_start",
+          "active_end"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "style": {
+      "type": "object",
+      "properties": {
+        "spec_version": {
+          "const": 1
+        },
+        "captions": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "font": {
+              "type": "string"
+            },
+            "size": {
+              "type": "number"
+            },
+            "color": {
+              "type": "string"
+            },
+            "accent": {
+              "type": "string"
+            },
+            "position": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "max_words": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "words_per_line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_chars": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_gap_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "pop_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mode": {
+              "enum": [
+                "group",
+                "word"
+              ]
+            },
+            "emphasis": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "outline": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "mix": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "voice_db": {
+              "type": "number"
+            },
+            "music_db": {
+              "type": "number"
+            },
+            "sfx_db": {
+              "type": "number"
+            },
+            "fade_seconds": {
+              "type": "number"
+            },
+            "duck_db": {
+              "type": "number"
+            },
+            "attack_seconds": {
+              "type": "number"
+            },
+            "release_seconds": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": true
+        },
+        "recipes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "steps"
+            ],
+            "properties": {
+              "$schema": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+              },
+              "name": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "requires": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "description": "Analysis kind the whole recipe needs"
+                }
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "use"
+                  ],
+                  "properties": {
+                    "use": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*(@\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?)?#[a-z0-9][a-z0-9.-]*$",
+                      "description": "<asset>#<capability>, e.g. spearfia/focus-loupe#pip.face-circle"
+                    },
+                    "target": {
+                      "type": "string",
+                      "description": "Which input/track the step applies to"
+                    },
+                    "with": {
+                      "type": "object",
+                      "description": "Input values for the capability"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "spec_version",
+        "captions",
+        "mix",
+        "recipes"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "spec_version",
+    "graphics",
+    "effects",
+    "captions",
+    "style"
+  ],
+  "additionalProperties": true
+}

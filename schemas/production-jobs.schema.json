@@ -1,0 +1,993 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/production-jobs/v1.json",
+  "title": "Spear Fia production-jobs",
+  "type": "object",
+  "properties": {
+    "spec_version": {
+      "const": 1
+    },
+    "jobs": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "task": {
+            "type": "object",
+            "properties": {
+              "adapter": {
+                "enum": [
+                  "comfyui",
+                  "voiceover",
+                  "alignment",
+                  "command",
+                  "agent"
+                ]
+              },
+              "url": {
+                "type": "string"
+              },
+              "workflow": {
+                "type": "object"
+              },
+              "text": {
+                "type": "string"
+              },
+              "profile_id": {
+                "type": "string"
+              },
+              "instruct": {
+                "type": "string"
+              },
+              "language": {
+                "type": "string"
+              },
+              "speed": {
+                "type": "number"
+              },
+              "steps": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "audio": {
+                "type": "string"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "program": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "outputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "audio",
+                        "image",
+                        "video",
+                        "text",
+                        "json"
+                      ]
+                    },
+                    "role": {
+                      "enum": [
+                        "a-roll",
+                        "voiceover",
+                        "b-roll",
+                        "screen",
+                        "graphics",
+                        "music",
+                        "sfx",
+                        "other",
+                        null
+                      ]
+                    },
+                    "anchor": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "line": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "quote": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "line",
+                            "quote"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "node": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "index": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "kind"
+                  ],
+                  "additionalProperties": true,
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "role": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "role"
+                        ]
+                      },
+                      "then": {
+                        "required": [
+                          "anchor"
+                        ],
+                        "properties": {
+                          "anchor": {
+                            "type": "object",
+                            "properties": {
+                              "line": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "quote": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "line",
+                              "quote"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "agent": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "claude",
+                      "codex"
+                    ]
+                  },
+                  "executable": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "timeout_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 86400
+                  }
+                },
+                "required": [
+                  "provider",
+                  "executable",
+                  "model",
+                  "effort",
+                  "timeout_seconds"
+                ],
+                "additionalProperties": true
+              },
+              "prompt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "adapter"
+            ],
+            "additionalProperties": true,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "const": "comfyui"
+                    }
+                  },
+                  "required": [
+                    "adapter"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "workflow": {
+                      "type": "object"
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "audio",
+                              "image",
+                              "video",
+                              "text",
+                              "json"
+                            ]
+                          },
+                          "role": {
+                            "enum": [
+                              "a-roll",
+                              "voiceover",
+                              "b-roll",
+                              "screen",
+                              "graphics",
+                              "music",
+                              "sfx",
+                              "other",
+                              null
+                            ]
+                          },
+                          "anchor": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "quote": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "line",
+                                  "quote"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "kind"
+                        ],
+                        "additionalProperties": true,
+                        "allOf": [
+                          {
+                            "if": {
+                              "properties": {
+                                "role": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "role"
+                              ]
+                            },
+                            "then": {
+                              "required": [
+                                "anchor"
+                              ],
+                              "properties": {
+                                "anchor": {
+                                  "type": "object",
+                                  "properties": {
+                                    "line": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "quote": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "line",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "workflow",
+                    "outputs"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "const": "voiceover"
+                    }
+                  },
+                  "required": [
+                    "adapter"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "profile_id": {
+                      "type": "string"
+                    },
+                    "instruct": {
+                      "type": "string"
+                    },
+                    "language": {
+                      "type": "string"
+                    },
+                    "speed": {
+                      "type": "number"
+                    },
+                    "steps": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "audio",
+                              "image",
+                              "video",
+                              "text",
+                              "json"
+                            ]
+                          },
+                          "role": {
+                            "enum": [
+                              "a-roll",
+                              "voiceover",
+                              "b-roll",
+                              "screen",
+                              "graphics",
+                              "music",
+                              "sfx",
+                              "other",
+                              null
+                            ]
+                          },
+                          "anchor": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "quote": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "line",
+                                  "quote"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "kind"
+                        ],
+                        "additionalProperties": true,
+                        "allOf": [
+                          {
+                            "if": {
+                              "properties": {
+                                "role": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "role"
+                              ]
+                            },
+                            "then": {
+                              "required": [
+                                "anchor"
+                              ],
+                              "properties": {
+                                "anchor": {
+                                  "type": "object",
+                                  "properties": {
+                                    "line": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "quote": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "line",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "text",
+                    "profile_id",
+                    "instruct",
+                    "language",
+                    "speed",
+                    "steps",
+                    "outputs"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "const": "alignment"
+                    }
+                  },
+                  "required": [
+                    "adapter"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "audio": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "language": {
+                      "type": "string"
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "audio",
+                              "image",
+                              "video",
+                              "text",
+                              "json"
+                            ]
+                          },
+                          "role": {
+                            "enum": [
+                              "a-roll",
+                              "voiceover",
+                              "b-roll",
+                              "screen",
+                              "graphics",
+                              "music",
+                              "sfx",
+                              "other",
+                              null
+                            ]
+                          },
+                          "anchor": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "quote": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "line",
+                                  "quote"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "kind"
+                        ],
+                        "additionalProperties": true,
+                        "allOf": [
+                          {
+                            "if": {
+                              "properties": {
+                                "role": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "role"
+                              ]
+                            },
+                            "then": {
+                              "required": [
+                                "anchor"
+                              ],
+                              "properties": {
+                                "anchor": {
+                                  "type": "object",
+                                  "properties": {
+                                    "line": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "quote": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "line",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "audio",
+                    "lines",
+                    "language",
+                    "outputs"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "const": "command"
+                    }
+                  },
+                  "required": [
+                    "adapter"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "program": {
+                      "type": "string"
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "outputs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "audio",
+                              "image",
+                              "video",
+                              "text",
+                              "json"
+                            ]
+                          },
+                          "role": {
+                            "enum": [
+                              "a-roll",
+                              "voiceover",
+                              "b-roll",
+                              "screen",
+                              "graphics",
+                              "music",
+                              "sfx",
+                              "other",
+                              null
+                            ]
+                          },
+                          "anchor": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "line": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "quote": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "line",
+                                  "quote"
+                                ],
+                                "additionalProperties": true
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "node": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "index": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "kind"
+                        ],
+                        "additionalProperties": true,
+                        "allOf": [
+                          {
+                            "if": {
+                              "properties": {
+                                "role": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "role"
+                              ]
+                            },
+                            "then": {
+                              "required": [
+                                "anchor"
+                              ],
+                              "properties": {
+                                "anchor": {
+                                  "type": "object",
+                                  "properties": {
+                                    "line": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "quote": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "line",
+                                    "quote"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "program",
+                    "args",
+                    "outputs"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "const": "agent"
+                    }
+                  },
+                  "required": [
+                    "adapter"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "agent": {
+                      "type": "object"
+                    },
+                    "prompt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "prompt"
+                  ]
+                }
+              }
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "file",
+                    "script",
+                    "visuals",
+                    "links",
+                    "filmcraft",
+                    "jobs",
+                    "alignment",
+                    "captions"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "role": {
+                  "enum": [
+                    "a-roll",
+                    "voiceover",
+                    "b-roll",
+                    "screen",
+                    "graphics",
+                    "music",
+                    "sfx",
+                    "other"
+                  ]
+                },
+                "minimum": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5000
+                },
+                "coverage": {
+                  "type": "boolean"
+                },
+                "stage": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": true,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "file"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 65536
+                      }
+                    },
+                    "required": [
+                      "path"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "links"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "role": {},
+                      "minimum": {},
+                      "coverage": {}
+                    },
+                    "required": [
+                      "role",
+                      "minimum",
+                      "coverage"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "jobs"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "stage": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stage"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "stage",
+          "depends_on",
+          "inputs",
+          "task",
+          "checks"
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "spec_version",
+    "jobs"
+  ],
+  "additionalProperties": true
+}

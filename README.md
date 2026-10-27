@@ -23,8 +23,8 @@ one through **Channel / handoff** in an existing project. Approve the saved scri
 before copying the production handoff for an agent.
 
 See [channel workflow](docs/channel-workflow.md) and [agent/CLI access](docs/agents.md).
-This release provides knowledge and approval-based handoff; it does not run ComfyUI or
-VoiceStudio. After approval, Sync (or `spearfia push filmcraft`) builds a FilmCraft review
+Production stages can run through installed CLI agents and their configured ComfyUI or
+VoiceStudio connections. After approval, Sync (or `spearfia push filmcraft`) builds a FilmCraft review
 project from the linked media.
 
 ## Visual Script
@@ -32,6 +32,12 @@ project from the linked media.
 **Visual Script** follows Script in each project: linked narration, visual directions, production details, references, coverage/review and agent exports. See [the guide](docs/visual-script.md).
 
 ## Agent editing
+
+The **Production** page coordinates installed Claude Code and Codex CLI agents with
+per-stage model assignments, saved checkpoints, output checks and creator review gates.
+See [production coordinator](docs/production.md) for setup and CLI commands, and
+[production execution](docs/production-execution.md) for durable service jobs, measured
+animated captions, executable visual treatments and actual audio mixing in FilmCraft.
 
 Start `spearfia mcp --project <folder>` for MCP stdio, or `spearfia api --project <folder>` for the authenticated loopback HTTP API. Script/Visual Script edits use revision checks and undo/redo; creator approval stays in the desktop. See [setup and tool reference](docs/agents.md).
 

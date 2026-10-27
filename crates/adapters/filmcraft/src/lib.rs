@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub mod mcp;
 mod push;
+mod render;
 pub use push::{Pushed, push};
 
 /// The `filmcraft-cli` to push with, or an error that says how to point Spear Fia at it.
