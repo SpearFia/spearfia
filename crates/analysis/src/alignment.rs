@@ -137,6 +137,8 @@ impl Alignment {
             ));
         }
         let mut words = Vec::new();
+        frame(duration, tb)?;
+        let duration_frames = (duration * f64::from(tb.num) / f64::from(tb.den)).floor() as u64;
         let mut at = 0;
         let mut prior = 0.0;
         for word in expected {
@@ -170,7 +172,7 @@ impl Alignment {
                 )));
             }
             let start_frame = frame(actual[begin].start, tb)?;
-            let end_frame = frame(actual[at - 1].end, tb)?;
+            let end_frame = frame(actual[at - 1].end, tb)?.min(duration_frames);
             if end_frame <= start_frame {
                 return Err(invalid("A measured word is shorter than the frame grid."));
             }
@@ -196,7 +198,7 @@ impl Alignment {
                 version: "1".into(),
             },
             timebase: tb,
-            duration_frames: frame(duration, tb)?,
+            duration_frames,
             words,
         };
         alignment.validate(source)?;
@@ -265,7 +267,9 @@ pub fn current(project: &Project) -> Result<Vec<Alignment>> {
         let text = spearfia_core::channels::read_limited(&file, 16 * 1024 * 1024)?;
         let alignment: Alignment =
             serde_json::from_str(&text).map_err(|e| invalid(format!("{}: {e}", file.display())))?;
-        if alignment.script_revision != revision {
+        if alignment.script_revision != revision
+            || alignment.timebase != project.file.settings.timebase
+        {
             continue;
         }
         alignment.validate(&script)?;
@@ -328,6 +332,11 @@ pub fn timeline_words(project: &Project, links: &Links, tb: Timebase) -> Result<
                 link.media.path
             ))
         })?;
+        if alignment.timebase != project.file.settings.timebase {
+            return Err(invalid(
+                "Narration frame rate changed; rerun measured alignment at the current project frame rate.",
+            ));
+        }
         if matching.iter().any(|other| {
             other.words != alignment.words
                 || other.duration_frames != alignment.duration_frames

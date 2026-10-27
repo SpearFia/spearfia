@@ -122,7 +122,9 @@ exact script revision, analyzer identity, rational timebase and word frame inter
 Missing, reordered, extra, overlapping or out-of-range words fail validation. Split ASR
 tokens can match a hyphenated script word, but timing is never interpolated to fill a gap.
 Correct the take or supply verified alignment when transcription and narration disagree.
-Stale audio/script sidecars cannot be used for assembly. Recorded live speech needs its
+Stale audio/script sidecars cannot be used for assembly. Source durations use complete
+frames, matching FilmCraft at fractional frame rates; changing project fps requires
+alignment at the new rate. Recorded live speech needs its
 own registered narration audio and alignment; the VO planner generates VO lines only.
 
 The execution profile lives in `production/style.json`, or one fenced `spearfia-style`

@@ -490,6 +490,10 @@ fn fingerprint(project: &Project, job: &Job, state: &Ledger) -> Result<String> {
     }
     if let Task::Alignment { audio, .. } = &job.task {
         data.push_str(&hash_file(&resolved_input(project, audio, state)?)?);
+        data.push_str(
+            &serde_json::to_string(&project.file.settings.timebase)
+                .map_err(|e| invalid(e.to_string()))?,
+        );
     }
     for dep in &job.depends_on {
         let record = state
@@ -881,7 +885,7 @@ fn execute_one(
                 let words: Vec<spearfia_analysis::MeasuredWord> =
                     serde_json::from_value(raw["words"].clone())
                         .map_err(|e| invalid(e.to_string()))?;
-                let duration = crate::timing::audio_seconds(Path::new(audio))
+                let duration = crate::timing::audio_seconds_precise(Path::new(audio))
                     .ok_or_else(|| invalid("Cannot measure aligned source duration."))?;
                 let audio_path = Path::new(audio)
                     .strip_prefix(&project.root)
@@ -901,7 +905,7 @@ fn execute_one(
                     hash_file(Path::new(audio))?,
                     &selected,
                     &words,
-                    f64::from(duration),
+                    duration,
                     project.file.settings.timebase,
                 )?;
                 write_json(&project.resolve(&outputs[0].path), &alignment)?;

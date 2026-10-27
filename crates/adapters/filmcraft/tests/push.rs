@@ -233,13 +233,20 @@ fn refuses_to_push_an_unapproved_script() {
 
 #[test]
 fn native_captions_visual_treatments_and_mix_survive_save() {
+    for tb in [Timebase::FPS_30, Timebase::FPS_29_97, Timebase::FPS_59_94] {
+        native_execution(tb);
+    }
+}
+fn native_execution(tb: Timebase) {
     use spearfia_analysis::{Alignment, MeasuredWord, hash_file, script_words};
     use spearfia_core::{project::write_json, visuals};
     let Some(cli) = detect().and_then(|i| i.cli) else {
         eprintln!("skipped: no FilmCraft CLI installed");
         return;
     };
-    let p = project("execution", true);
+    let mut p = project(&format!("execution-{}", tb.num), true);
+    p.file.settings.timebase = tb;
+    write_json(&p.root.join("project.json"), &p.file).unwrap();
     // Fixture measurements have deliberately uneven pauses; they test frame mapping,
     // not speech recognition. No generation service is contacted.
     for (file, lines, duration, spacing) in [
@@ -266,7 +273,7 @@ fn native_captions_visual_treatments_and_mix_survive_save() {
             &lines,
             &measured,
             duration,
-            Timebase::FPS_30,
+            tb,
         )
         .unwrap();
         write_json(
@@ -304,6 +311,9 @@ fn native_captions_visual_treatments_and_mix_survive_save() {
         .push(link("k6", "think", 1, "gen/two.wav", MediaRole::Sfx));
     links.save(&p).unwrap();
     let pushed = push(&p, &cli).unwrap();
+    let second = pushed.plan.items.iter().find(|i| i.cue_id == "k3").unwrap();
+    let second_start = (2.0 * f64::from(tb.num) / f64::from(tb.den)).floor() as u64;
+    assert_eq!(second.start_frame, second_start);
     let out = Command::new(&cli)
         .arg("--project")
         .arg(&pushed.review)
@@ -369,6 +379,17 @@ fn native_captions_visual_treatments_and_mix_survive_save() {
     )
     .unwrap();
     assert_eq!(execution["captions"].as_array().unwrap().len(), 15);
+    let second_caption = execution["captions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["text"].as_str().unwrap().starts_with("I'm"))
+        .unwrap();
+    assert_eq!(
+        second_caption["start_frame"].as_u64(),
+        Some(second_start + spearfia_analysis::frame(0.05, tb).unwrap()),
+        "Alignment drifted at {tb:?}"
+    );
     assert!(!execution["effects"].as_array().unwrap().is_empty());
     // Leave the synthetic review available for visual QA in the test temp folder.
     eprintln!("native execution review: {}", pushed.review.display());
