@@ -11,7 +11,9 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
 - `crates/adapters/filmcraft/`: `spearfia-adapter-filmcraft`. A `resolve/` adapter comes later.
 - `schemas/`: pinned copy of `spearfia-spec` schemas. Don't edit here; see `schemas/README.md`.
 - `examples/sample-project/`: a minimal project folder.
-- `docs/`: `architecture.md`, `filmcraft-recon.md`, `adr/`.
+- `docs/`: `architecture.md`, `filmcraft-recon.md`, `adr/`. Start with `pipeline.md` (the
+  end-to-end production plan, what is built and what is missing), then `channel-workflow.md`,
+  `agents.md` (MCP/HTTP tools) and `visual-script.md`.
 
 ## Commands
 

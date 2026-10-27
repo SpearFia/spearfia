@@ -277,7 +277,9 @@ impl Project {
                 .media_folders
                 .push(MediaFolder::new(&moved, role));
         }
-        let mut updated_links = links.clone();
+        // Start from the saved links so an agent's newer links survive the remap.
+        let _lock = self.edit_lock()?;
+        let mut updated_links = Links::load(self)?;
         for link in &mut updated_links.links {
             if let Some(path) = remap(&link.media.path) {
                 link.media.path = path;

@@ -102,6 +102,8 @@ pub struct Workspace {
     pub channel: crate::screens::channels::ProjectChannelView,
     /// Shown in the top bar if `links.json` can't be read.
     pub links_error: Option<String>,
+    /// When `links.json` was last reread, to pick up links saved by agents.
+    links_checked: f64,
 }
 
 impl Workspace {
@@ -127,6 +129,7 @@ impl Workspace {
             links,
             channel: crate::screens::channels::ProjectChannelView::default(),
             links_error,
+            links_checked: 0.0,
         }
     }
 }
@@ -146,6 +149,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         ws.visuals
             .editor
             .refresh_external(&ws.project, now, ui.ctx());
+        if now - ws.links_checked >= 1.0 {
+            ws.links_checked = now;
+            match Links::load(&ws.project) {
+                Ok(links) => {
+                    if links != ws.links {
+                        ws.links = links;
+                    }
+                    ws.links_error = None;
+                }
+                Err(e) => ws.links_error = Some(e.to_string()),
+            }
+        }
         Panel::top("ws-top")
             .exact_size(44.0)
             .show_separator_line(false)

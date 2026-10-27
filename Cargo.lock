@@ -2863,6 +2863,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spearfia-core",
+ "spearfia-script",
 ]
 
 [[package]]

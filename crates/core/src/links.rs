@@ -153,40 +153,66 @@ impl Links {
                     .into(),
             ));
         }
-        let mut updated = self.clone();
-        let mut ids = Vec::new();
-        for request in requests {
-            if let Some(existing) = updated.links.iter().find(|l| {
-                l.quote == request.quote
-                    && l.line == request.line
-                    && l.media.path == request.media.path
-                    && l.role == request.role
-                    && l.kind == request.kind
-            }) {
-                ids.push(existing.id.clone());
-                continue;
+        self.update(project, |updated| {
+            let mut ids = Vec::new();
+            for request in requests {
+                if let Some(existing) = updated.links.iter().find(|l| {
+                    l.quote == request.quote
+                        && l.line == request.line
+                        && l.media.path == request.media.path
+                        && l.role == request.role
+                        && l.kind == request.kind
+                        && l.in_point == request.in_point
+                        && l.out_point == request.out_point
+                }) {
+                    ids.push(existing.id.clone());
+                    continue;
+                }
+                let largest = updated
+                    .links
+                    .iter()
+                    .filter_map(|l| l.id.strip_prefix('k')?.parse::<u32>().ok())
+                    .max()
+                    .unwrap_or(0);
+                if largest == u32::MAX {
+                    return Err(CoreError::Invalid(
+                        "No media link IDs remain. The links were not changed.".into(),
+                    ));
+                }
+                ids.push(updated.add(request));
             }
-            let largest = updated
-                .links
-                .iter()
-                .filter_map(|l| l.id.strip_prefix('k')?.parse::<u32>().ok())
-                .max()
-                .unwrap_or(0);
-            if largest == u32::MAX {
-                return Err(CoreError::Invalid(
-                    "No media link IDs remain. The links were not changed.".into(),
-                ));
-            }
-            ids.push(updated.add(request));
-        }
-        updated.save(project)?;
-        *self = updated;
-        Ok(ids)
+            Ok(ids)
+        })
     }
 
     pub fn remove(&mut self, id: &str) -> Option<Link> {
         let i = self.links.iter().position(|l| l.id == id)?;
         Some(self.links.remove(i))
+    }
+
+    /// Remove a link and save. Like [`Links::add_batch`], starts from the saved file.
+    pub fn remove_saved(&mut self, project: &Project, id: &str) -> Result<Link> {
+        self.update(project, |links| {
+            links
+                .remove(id)
+                .ok_or_else(|| CoreError::Invalid(format!("No media link {id}.")))
+        })
+    }
+
+    /// Apply `change` to the saved `links.json` under the project edit lock, save it and
+    /// adopt the result, so a stale in-memory copy never overwrites another writer's links.
+    /// A failed change or save leaves memory and disk unchanged.
+    pub fn update<T>(
+        &mut self,
+        project: &Project,
+        change: impl FnOnce(&mut Links) -> Result<T>,
+    ) -> Result<T> {
+        let _lock = project.edit_lock()?;
+        let mut updated = Self::load(project)?;
+        let out = change(&mut updated)?;
+        updated.save(project)?;
+        *self = updated;
+        Ok(out)
     }
 
     /// How many links use this media file.
@@ -412,6 +438,7 @@ mod tests {
         let mut old = sample();
         old.id = format!("k{}", u32::MAX);
         links.links.push(old);
+        links.save(&project).unwrap();
         let before = links.clone();
         let mut extra = sample();
         extra.media.path = "b.mp4".into();

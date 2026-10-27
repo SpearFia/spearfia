@@ -1,9 +1,9 @@
 # Agent access: MCP, local API and CLI
 
 Spear Fia provides a working MCP **stdio** server and authenticated loopback JSON HTTP API
-for Script and Visual Script editing. Both dispatch to project-bound `spearfia-core`
-commands. General Media/Effects editing, automatic generation and FilmCraft sync are not
-exposed by these transports. Do not invent `generate_video` or `push_to_filmcraft` tools.
+for Script and Visual Script editing and for linking media to script words. Both dispatch
+to project-bound `spearfia-core` commands. Media import/moves, Effects editing, automatic
+generation and FilmCraft sync are not exposed by these transports. Do not invent `generate_video` or `push_to_filmcraft` tools.
 
 ## MCP stdio
 
@@ -74,6 +74,15 @@ access. Tokens require 32–256 printable ASCII characters; use randomly generat
 | `project_handoff` | `production`: false for drafting; true for the current approved production brief. |
 | `channels_list` | No arguments. Saved channel IDs, names and folders. |
 | `channel_read` | `id`. Shared saved Markdown guides, treated as drafting context. |
+| `media_list` | No arguments. Media folders (path, role, exists) and files (path, kind, role, bytes); at most 5,000 files, with `truncated`. |
+| `links_list` | No arguments. Each link's ID, quote, line, media path, role, `picture`/`audio` kind, in/out and `status` (`linked`, or `lost` when its words were edited away) with `current_line`. |
+| `links_add` | `links`: 1–1,000 `{line, quote, media, in?, out?}`. `line` is the zero-based script line; `quote` is exact words on that line (punctuation included, formatting marks omitted); `media` is a path from `media_list`; in/out are `HH:MM:SS` or seconds. Role and kind come from the media folder, so files in a voiceover folder link as audio. All entries save together; an identical link returns its existing ID. |
+| `links_remove` | `id`. Removes one link. |
+
+Link edits go straight to `links.json` under the project edit lock and always start from
+the saved file, so agent and desktop links never overwrite each other. The desktop picks
+up agent links within about a second. Link edits are not part of undo/redo, and they do
+not affect script approval.
 
 `visuals_edit.edit` supports:
 
