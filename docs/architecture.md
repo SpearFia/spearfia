@@ -26,7 +26,9 @@ Every script cue has a stable ID (`{#m12}`), stored in the editor's timeline ite
 - Cues keep the timing the script asked for (intent) separate from the timing the editor
   actually has (actual).
 
-Lives in `spearfia-sync` and `spearfia-adapter-filmcraft`.
+Lives in `spearfia-sync` and `spearfia-adapter-filmcraft`. The first, one-way push
+(links → review timeline) is [ADR 0005](adr/0005-first-filmcraft-push.md); what FilmCraft
+offers and lacks is in [filmcraft-recon.md](filmcraft-recon.md).
 
 ## Per-project vision
 
