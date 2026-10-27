@@ -222,6 +222,12 @@ fn run(cli: &Cli) -> Result<(), String> {
                 None => None,
             };
             let project = new_project(name, folder, brief, *runtime, goal, *avg_shot)?;
+            // List it on the desktop's Projects page, as opening it there would.
+            if let Some(config) = app_state::config_dir() {
+                let mut recents = app_state::Recents::load_from(&config);
+                recents.touch(&project, app_state::now_unix());
+                recents.save_to(&config).map_err(|e| e.to_string())?;
+            }
             println!("{}", project.root.display());
             return Ok(());
         }
