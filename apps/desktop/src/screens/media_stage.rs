@@ -20,12 +20,14 @@ enum View {
     Script,
 }
 
-const ROLES: [MediaRole; 6] = [
+const ROLES: [MediaRole; 8] = [
     MediaRole::ARoll,
     MediaRole::Voiceover,
     MediaRole::BRoll,
     MediaRole::Screen,
     MediaRole::Graphics,
+    MediaRole::Music,
+    MediaRole::Sfx,
     MediaRole::Other,
 ];
 

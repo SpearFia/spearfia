@@ -28,6 +28,8 @@ pub fn role_color(role: MediaRole) -> egui::Color32 {
         MediaRole::BRoll => theme::CUE_CLIP,
         MediaRole::Screen => theme::CUE_LOOK,
         MediaRole::Graphics => theme::CUE_VISION,
+        MediaRole::Music => theme::CUE_MUSIC,
+        MediaRole::Sfx => theme::CUE_SFX,
         MediaRole::Other => theme::TEXT_2,
     }
 }

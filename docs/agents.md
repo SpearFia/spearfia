@@ -150,6 +150,7 @@ spearfia channels list
 spearfia channels read <channel-id>
 spearfia project brief|status|handoff <project-folder>
 spearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>
+spearfia sections <project-folder>
 spearfia push filmcraft <project-folder>
 ```
 

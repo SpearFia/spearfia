@@ -1,4 +1,4 @@
-# Stage 8: Thumbnail and description
+# Stage 9: Thumbnail and description
 
 **Run with:** Claude or Codex with image tools (PhotoCraft, ComfyUI).
 

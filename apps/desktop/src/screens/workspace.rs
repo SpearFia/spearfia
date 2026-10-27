@@ -74,10 +74,13 @@ pub struct Workspace {
     pub links_error: Option<String>,
     /// When `links.json` was last reread, to pick up links saved by agents.
     links_checked: f64,
+    /// Recorded VO lengths, cached between refreshes.
+    vo_probe: spearfia_ops::timing::Probe,
 }
 
 impl Workspace {
     pub fn new(project: Project) -> Self {
+        crate::vo_timing::set(Default::default());
         let script = ScriptStage::load(&project);
         let media = MediaStage::new(&project);
         let visuals = super::visual_stage::VisualStage::new(&project);
@@ -101,6 +104,7 @@ impl Workspace {
             channel: crate::screens::channels::ProjectChannelView::default(),
             links_error,
             links_checked: 0.0,
+            vo_probe: Default::default(),
         }
     }
 }
@@ -132,6 +136,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
                 Err(e) => ws.links_error = Some(e.to_string()),
             }
+            crate::vo_timing::set(spearfia_ops::timing::vo_seconds(
+                &ws.project,
+                ws.script.script(),
+                &ws.links,
+                &mut ws.vo_probe,
+            ));
         }
         Panel::top("ws-top")
             .exact_size(44.0)

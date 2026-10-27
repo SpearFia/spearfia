@@ -221,3 +221,65 @@ fn points_parse_as_timecode_or_seconds() {
 fn crate_name_is_namespaced() {
     assert_eq!(NAME, "spearfia-sync");
 }
+
+#[test]
+fn music_and_sfx_get_their_own_tracks_and_leave_voiceover_alone() {
+    use MediaRole::*;
+    let links = Links {
+        links: vec![
+            link(
+                "k1",
+                "think it would help.",
+                1,
+                "vo/one.wav",
+                Voiceover,
+                None,
+            ),
+            link(
+                "k2",
+                "I'm a circuit racer.",
+                5,
+                "vo/two.wav",
+                Voiceover,
+                None,
+            ),
+            link(
+                "k3",
+                "think it would help.",
+                1,
+                "music/bed.wav",
+                Music,
+                None,
+            ),
+            link("k4", "almost made me quit.", 3, "sfx/hit.wav", Sfx, None),
+        ],
+        ..Links::default()
+    };
+    let media = BTreeMap::from([
+        ("vo/one.wav".to_owned(), Some(90)),
+        ("vo/two.wav".to_owned(), Some(60)),
+        ("music/bed.wav".to_owned(), Some(1000)),
+        ("sfx/hit.wav".to_owned(), Some(10)),
+    ]);
+    let (plan, issues) = compile(&spearfia_script::parse(SCRIPT), &links, &media, TB);
+    let on = |track: &str| -> Vec<(u64, u64)> {
+        plan.items
+            .iter()
+            .filter(|i| i.track == track)
+            .map(|i| (i.start_frame, i.duration_frames))
+            .collect()
+    };
+    // VO stays back to back on A1, untouched by the music and SFX links.
+    assert_eq!(on("A1"), vec![(0, 90), (90, 60)]);
+    // The bed runs from its words to the end of all VO, trimmed to nothing longer.
+    assert_eq!(on("A2"), vec![(0, 150)]);
+    // The hit plays once, at its words, for its own length, without a Short issue.
+    let hit = on("A3");
+    assert_eq!(hit.len(), 1);
+    assert!(hit[0].0 > 0 && hit[0].0 < 90 && hit[0].1 == 10, "{hit:?}");
+    // (Its transitions have no pictures to attach to here.)
+    assert!(
+        issues.iter().all(|i| matches!(i, Issue::Unmapped { .. })),
+        "{issues:?}"
+    );
+}

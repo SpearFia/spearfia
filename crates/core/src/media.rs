@@ -228,7 +228,10 @@ mod tests {
 
         let tree = scan(&p);
         let names: Vec<&str> = tree.iter().map(|n| n.name.as_str()).collect();
-        assert_eq!(names, ["A-roll", "B-roll", "Screen", "Graphics"]);
+        assert_eq!(
+            names,
+            ["A-roll", "B-roll", "Screen", "Graphics", "Music", "SFX"]
+        );
 
         let aroll = &tree[0];
         assert_eq!(aroll.children.len(), 2);
@@ -253,7 +256,7 @@ mod tests {
         assert!(p.add_media_folder(&outside, MediaRole::BRoll).is_err());
 
         let reopened = Project::open(&p.root).unwrap();
-        assert_eq!(reopened.file.media_folders.len(), 6);
+        assert_eq!(reopened.file.media_folders.len(), 8);
         let tree = scan(&reopened);
         let node = tree.last().unwrap();
         assert!(Path::new(&node.path).is_absolute());

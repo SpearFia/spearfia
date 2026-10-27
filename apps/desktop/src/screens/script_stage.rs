@@ -1787,7 +1787,7 @@ impl ScriptStage {
                     .map(|v| v.trim().trim_matches('"').to_owned())
             })
         });
-        let timeline = b.main.then(|| spearfia_script::timing::timeline(&b.parsed));
+        let timeline = b.main.then(|| crate::vo_timing::timeline(&b.parsed));
         let mut go: Option<usize> = None;
         Frame::new()
             .inner_margin(Margin {
@@ -2237,7 +2237,7 @@ impl ScriptStage {
         let lines = doc::lines(&src, &parsed);
         let covered = resolved.as_ref().map(|r| script_view::coverage(&parsed, r));
         let times: Option<HashMap<usize, String>> = self.buf().main.then(|| {
-            let tl = spearfia_script::timing::timeline(&parsed);
+            let tl = crate::vo_timing::timeline(&parsed);
             tl.sections
                 .iter()
                 .filter_map(|s| match parsed.blocks.get(s.block) {

@@ -80,7 +80,7 @@ impl TransitionsStage {
         catalog: &Catalog,
     ) {
         let parsed = spearfia_script::parse(script.source());
-        let tl = timing::timeline(&parsed);
+        let tl = crate::vo_timing::timeline(&parsed);
         let all = cuts::cuts(&parsed, &tl);
         let resolved = script_view::resolve(&parsed, links);
         let weights = spearfia_vision::project_weights(project);

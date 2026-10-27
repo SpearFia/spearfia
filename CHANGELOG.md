@@ -6,6 +6,12 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Audio
+
+- Media folders can have the `music` and `sfx` roles (new projects get `Music/` and `SFX/`). Their links are audio, and the FilmCraft push places music on A2 (until the next music or the end of the narration) and SFX on A3 (once, at their words), leaving voiceover timing on A1 unchanged. Review sequences get three audio tracks.
+- Timelines (Script, Music, SFX, Effects, Transitions stages) and Visual Script timing labels use recorded VO lengths from linked voiceover files (WAV headers, or ffprobe for other formats), spread over each section's lines by word count; unrecorded lines keep the 150 wpm estimate.
+- `spearfia sections <project>` prints each section's VO lines as JSON for voiceover generation.
+
 ### Agent editing
 
 - Implement project-bound MCP stdio and authenticated local HTTP editing tools for narration and Visual Script, including typed cue operations, revision conflicts, reference binding and bounded undo/redo. Clean agent edits enter desktop undo; production approval remains creator-only.

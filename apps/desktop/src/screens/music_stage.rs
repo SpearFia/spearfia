@@ -21,7 +21,7 @@ use egui::{
 };
 use spearfia_catalog::{AssetKind, Catalog, Entry, LicenseStatus};
 use spearfia_core::project::Project;
-use spearfia_script::timing::{self, MusicSpan, Span, Timeline};
+use spearfia_script::timing::{MusicSpan, Span, Timeline};
 use spearfia_script::{Block, Script, edit};
 use std::collections::HashMap;
 
@@ -73,7 +73,7 @@ impl MusicStage {
         catalog: &Catalog,
     ) {
         let parsed = spearfia_script::parse(script.source());
-        let tl = timing::timeline(&parsed);
+        let tl = crate::vo_timing::timeline(&parsed);
         let weights = spearfia_vision::project_weights(project);
         let mut tracks: Vec<(&Entry, f32)> = catalog
             .entries
@@ -1172,6 +1172,7 @@ fn plural(n: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spearfia_script::timing;
 
     #[test]
     fn gaps_and_untracked_cues_are_checked() {

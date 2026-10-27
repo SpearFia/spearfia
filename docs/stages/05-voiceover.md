@@ -1,20 +1,17 @@
-# Stage 5: Voiceover linking
+# Stage 5: Voiceover
 
-**Run with:** Codex with the Spear Fia MCP. VoiceStudio generation is manual until it is connected.
+**Run with:** Codex or Claude with the Spear Fia MCP. VoiceStudio must be open.
 
 ````text
-You link voiceover files to the narration of the current Spear Fia project (MCP server
-"spearfia").
+Use the voiceover skill on the current Spear Fia project (MCP server "spearfia").
 
-The VO files are in the project's voiceover folder, one per script section, named
-<section-number>_<section-title>.<ext>.
+Voice: <VoiceStudio profile ID, or "the one in tools.md">
+Style: <e.g. "energetic storyteller, clear, not shouty">
 
-1. Read project_context (the script must be approved), media_list and document_read for
-   "script".
-2. For each file, find its section and link it with links_add: the section's first VO
-   line, its exact words, and the file path. Voiceover folders link as audio.
-3. links_list must show every link "linked".
+Check project_context (the script must be approved). Do a dry run, generate section 1
+and stop so I can listen. When I say go, generate the rest, then link every file with
+the links_add payload the script prints, and check links_list.
 
-Report: files linked, sections without a file, files without a section. Don't edit the
-script.
+Report sections generated, total duration, failures, and anything that sounded wrong.
+Don't edit the script.
 ````

@@ -80,6 +80,11 @@ enum Cmd {
         /// Project folder; defaults to `--project`.
         folder: Option<PathBuf>,
     },
+    /// List the script's `##` sections with their VO lines, as JSON (for VO generation).
+    Sections {
+        /// Project folder; defaults to `--project`.
+        folder: Option<PathBuf>,
+    },
     /// Read or export the Visual Script.
     Visuals {
         #[arg(value_enum)]
@@ -174,6 +179,13 @@ fn run(cli: &Cli) -> Result<(), String> {
                 .and_then(|cli| spearfia_adapter_filmcraft::push(&project, &cli))
                 .map_err(|e| e.to_string())?;
             print_json(fc.summary());
+            return Ok(());
+        }
+        Cmd::Sections { folder } => {
+            let doc = Doc::main(&open(folder)?).map_err(|e| e.to_string())?;
+            print_json(
+                serde_json::json!({ "version": doc.version, "sections": sections(&doc.script) }),
+            );
             return Ok(());
         }
         Cmd::Visuals { action, folder } => {
@@ -284,9 +296,53 @@ fn run(cli: &Cli) -> Result<(), String> {
             }
         }
         Cmd::Mcp | Cmd::Api { .. } | Cmd::Channels { .. } | Cmd::ProjectInfo { .. } => {}
-        Cmd::Visuals { .. } | Cmd::Push { .. } => {}
+        Cmd::Visuals { .. } | Cmd::Push { .. } | Cmd::Sections { .. } => {}
     }
     Ok(())
+}
+
+/// Each `##` section (and any VO before the first one, as section 0) with its VO lines:
+/// zero-based line number, the words as written and their count. `LIVE:` lines are left
+/// out: they're recorded on camera, not generated.
+fn sections(script: &spearfia_script::Script) -> Vec<serde_json::Value> {
+    use spearfia_script::{Block, LineKind, format::line_words};
+    let mut out = vec![serde_json::json!({"index": 0, "title": "Intro", "line": 0, "lines": []})];
+    for b in &script.blocks {
+        match b {
+            Block::Heading {
+                level, text, line, ..
+            } if *level >= 2 => {
+                let index = out.len();
+                out.push(
+                    serde_json::json!({"index": index, "title": text, "line": line, "lines": []}),
+                );
+            }
+            Block::Line {
+                kind: LineKind::Spoken,
+                segments,
+                line,
+            } => {
+                let words = line_words(segments);
+                if !words.is_empty() {
+                    let last = out.len() - 1;
+                    out[last]["lines"]
+                        .as_array_mut()
+                        .expect("lines is an array")
+                        .push(serde_json::json!({"line": line, "text": words.join(" "), "words": words.len()}));
+                }
+            }
+            _ => {}
+        }
+    }
+    for s in &mut out {
+        let words: u64 = s["lines"]
+            .as_array()
+            .map_or(0, |l| l.iter().filter_map(|l| l["words"].as_u64()).sum());
+        s["words"] = words.into();
+        s["est_seconds"] = spearfia_script::estimate_seconds(words as usize).into();
+    }
+    out.retain(|s| s["index"] != 0 || s["words"] != 0);
+    out
 }
 
 fn read_channels(op: &ChannelOp, config: &Path) -> Result<String, String> {
@@ -386,6 +442,7 @@ mod tests {
             "spearfia project handoff p",
             "spearfia project status",
             "spearfia visuals cue-sheet p",
+            "spearfia sections p",
             "spearfia push filmcraft p",
         ] {
             Cli::try_parse_from(args.split(' ')).unwrap_or_else(|e| panic!("{args}: {e}"));
@@ -398,6 +455,20 @@ mod tests {
         ] {
             assert!(Cli::try_parse_from(args.split(' ')).is_err(), "{args}");
         }
+    }
+
+    #[test]
+    fn sections_list_vo_lines_and_skip_live_and_empty_intro() {
+        let s = spearfia_script::parse(
+            "# Title\n## Cold open\nVO: Could **Harry** beat Thanos?\nLIVE: Hi.\n## Round one\nVO: The wand.\n",
+        );
+        let out = sections(&s);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0]["title"], "Cold open");
+        assert_eq!(out[0]["lines"][0]["line"], 2);
+        assert_eq!(out[0]["lines"][0]["text"], "Could Harry beat Thanos?");
+        assert_eq!(out[0]["words"], 4);
+        assert_eq!(out[1]["index"], 2);
     }
 
     #[test]

@@ -18,8 +18,8 @@ remain available. Visual paragraph types appear in the style menu and `/` insert
 Visual direction, Action / reveal, On-screen text, Graphic specification, Production prompt,
 Continuity / constraint, and Production note. The saved prefixes are `VISUAL:`, `ACTION:`,
 `TEXT:`, `GRAPHIC:`, `PROMPT:`, `CONTINUITY:` and `PRODUCTION NOTE:`. All prose in this editor
-is non-spoken, including text without a prefix. Timing labels derive from linked narration
-at 150 wpm; measured recording timing is not implemented.
+is non-spoken, including text without a prefix. Timing labels derive from linked narration:
+recorded VO lengths once VO files are linked, otherwise a 150 wpm estimate.
 
 ## Cue details and feedback
 

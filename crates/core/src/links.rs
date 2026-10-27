@@ -22,15 +22,15 @@ pub const MAX_BATCH_BYTES: usize = 16 * 1024 * 1024;
 pub enum LinkKind {
     /// Shown on screen (B-roll, facecam, screen capture, graphics).
     Picture,
-    /// Heard (voiceover).
+    /// Heard (voiceover, music, sound effects).
     Audio,
 }
 
 impl LinkKind {
-    /// Voiceover folders supply sound; everything else supplies picture.
+    /// Voiceover, music and SFX folders supply sound; everything else supplies picture.
     pub fn for_role(role: MediaRole) -> Self {
         match role {
-            MediaRole::Voiceover => Self::Audio,
+            MediaRole::Voiceover | MediaRole::Music | MediaRole::Sfx => Self::Audio,
             _ => Self::Picture,
         }
     }
