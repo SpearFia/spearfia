@@ -142,6 +142,22 @@ fn links(role: MediaRole, coverage: bool) -> Check {
         coverage,
     }
 }
+/// Channel research and media search download from the web and keep results outside the
+/// project (the shared library, the DNA study folder: the skills' defaults). Other stages
+/// stay offline and project-only. Editable per stage in the saved pipeline.
+fn stage_agent(id: &str, provider: Provider) -> Agent {
+    let mut agent = Agent::new(provider);
+    let outside = match id {
+        "channel-dna" => r"D:\SpearFia\dna-study",
+        "media-search" => r"D:\SpearFia\library",
+        _ => return agent,
+    };
+    agent.network = true;
+    if cfg!(windows) {
+        agent.writable_dirs = vec![outside.into()];
+    }
+    agent
+}
 pub fn defaults() -> Pipeline {
     use MediaRole::*;
     let definitions = [
@@ -301,7 +317,7 @@ pub fn defaults() -> Pipeline {
                 |(id, title, provider, production, review, prompt, checks)| Stage {
                     id: id.into(),
                     title: title.into(),
-                    agent: Agent::new(provider),
+                    agent: stage_agent(id, provider),
                     prompt: prompt.into(),
                     production,
                     review,

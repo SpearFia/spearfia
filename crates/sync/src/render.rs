@@ -751,6 +751,7 @@ mod tests {
             text: text.into(),
             start_frame: start,
             end_frame: end,
+            estimated: false,
         }
     }
     #[test]

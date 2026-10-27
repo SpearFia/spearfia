@@ -22,7 +22,7 @@ automation. Prose-only actions and unmapped capabilities fail instead of disappe
 Existing projects without these opt-in treatments keep the basic link-based push.
 
 Tradeoffs: sequential scheduling initially; Python standard-library HTTP subprocesses;
-strict speech matching can require take correction or verified external alignment;
+misheard words are placed between measured neighbours (bounded, flagged `estimated`);
 external services may outlive a cancelled local process. FilmCraft-native recipes are
 supported, while arbitrary plugin installation and analysis-dependent recipes remain
 explicitly unavailable. Formats are defined first in `spearfia-spec`.

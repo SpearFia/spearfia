@@ -87,6 +87,11 @@
           "end_frame": {
             "type": "integer",
             "minimum": 0
+          },
+          "estimated": {
+            "type": "boolean",
+            "default": false,
+            "description": "Placed between measured neighbours because transcription misheard the word; absent when measured."
           }
         },
         "required": [

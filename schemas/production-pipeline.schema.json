@@ -48,6 +48,18 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 86400
+              },
+              "network": {
+                "type": "boolean",
+                "default": false,
+                "description": "Let the agent's commands reach the network (Codex sandboxes block it by default)."
+              },
+              "writable_dirs": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "default": [],
+                "description": "Absolute folders outside the project the agent may write, e.g. a shared media library."
               }
             },
             "required": [

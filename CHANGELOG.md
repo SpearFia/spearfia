@@ -8,6 +8,12 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Production execution
 
+- Word alignment tolerates transcription errors: exact words anchor timing, filler is
+  skipped, and short misheard runs (names, numbers) are placed between measured neighbours
+  and flagged `estimated`, within fixed limits. Takes that diverge further still fail.
+- Pipeline agents gain `network` and `writable_dirs`. Codex runs get network access and
+  `--add-dir` only when a stage asks; the default channel-DNA and media-search stages do,
+  for `D:\SpearFia\dna-study` and `D:\SpearFia\library` (Windows).
 - Add durable artifact DAG jobs with fingerprints, saved service identities, cancellation,
   reconciliation, per-job retries, verified download reuse and media registration. Add
   VoiceStudio/ComfyUI/alignment adapters, CLI planning and asynchronous MCP/HTTP tools.

@@ -35,6 +35,9 @@ pub struct Word {
     pub text: String,
     pub start_frame: u64,
     pub end_frame: u64,
+    /// Placed between measured neighbours because transcription misheard it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub estimated: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
@@ -98,6 +101,101 @@ pub fn script_words(source: &str) -> Vec<ScriptWord> {
     }
     result
 }
+/// Longest run of consecutive script words that may be misheard and still be placed.
+const MAX_GAP_WORDS: usize = 8;
+/// Most script words (percent) that may be placed rather than measured.
+const MAX_ESTIMATED_PERCENT: usize = 20;
+/// Most heard tokens (percent) that may be filler not in the script.
+const MAX_EXTRA_PERCENT: usize = 15;
+/// How far ahead to look for the next agreement after a mismatch.
+const RESYNC_WINDOW: usize = 12;
+
+/// For each script word, the heard tokens that spell it (`None` when misheard). Up to
+/// three heard tokens may spell one word ("co" "op" / "co-op"), and two script words may
+/// share one token ("Iron Man" / "ironman"). After a mismatch, the closest point where the
+/// next two words agree again resumes the matching. `Err(i)` when script word `i` starts
+/// a misheard run longer than [`MAX_GAP_WORDS`].
+fn anchor(
+    want: &[String],
+    heard: &[String],
+) -> std::result::Result<Vec<Option<Range<usize>>>, usize> {
+    // Tokens consumed if script word `i` is spelled from token `j` (0 = no match).
+    let spell = |i: usize, j: usize| -> usize {
+        let mut joined = String::new();
+        for (k, token) in heard.iter().enumerate().skip(j).take(3) {
+            joined.push_str(token);
+            if joined == want[i] {
+                return k + 1 - j;
+            }
+            if !want[i].starts_with(&joined) {
+                break;
+            }
+        }
+        0
+    };
+    let pair = |i: usize, j: usize| {
+        i + 1 < want.len() && j < heard.len() && format!("{}{}", want[i], want[i + 1]) == heard[j]
+    };
+    // Do the next `n` script words from `i` agree with the tokens from `j`?
+    let agrees = |mut i: usize, mut j: usize, n: usize| {
+        for _ in 0..n {
+            if i >= want.len() {
+                return true;
+            }
+            if pair(i, j) {
+                i += 2;
+                j += 1;
+                continue;
+            }
+            match spell(i, j) {
+                0 => return false,
+                k => {
+                    i += 1;
+                    j += k;
+                }
+            }
+        }
+        true
+    };
+    let mut out: Vec<Option<Range<usize>>> = vec![None; want.len()];
+    let (mut i, mut j) = (0, 0);
+    while i < want.len() {
+        if pair(i, j) {
+            out[i] = Some(j..j + 1);
+            out[i + 1] = Some(j..j + 1);
+            i += 2;
+            j += 1;
+            continue;
+        }
+        let k = spell(i, j);
+        if k > 0 {
+            out[i] = Some(j..j + k);
+            i += 1;
+            j += k;
+            continue;
+        }
+        // Resync: skip the fewest script words and heard tokens that make the next words
+        // (two, or what's left) agree again.
+        let need = 2.min(want.len() - i);
+        let next = (1..=2 * RESYNC_WINDOW)
+            .flat_map(|cost| (0..=cost.min(RESYNC_WINDOW)).map(move |di| (di, cost - di)))
+            .filter(|&(_, dj)| dj <= RESYNC_WINDOW)
+            .find(|&(di, dj)| {
+                i + di < want.len() && j + dj < heard.len() && agrees(i + di, j + dj, need)
+            });
+        match next {
+            Some((di, dj)) if di <= MAX_GAP_WORDS => {
+                i += di;
+                j += dj;
+            }
+            // Nothing agrees again: the rest of the script was not heard.
+            None if want.len() - i <= MAX_GAP_WORDS => break,
+            _ => return Err(i),
+        }
+    }
+    Ok(out)
+}
+
 fn norm(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_alphanumeric())
@@ -112,8 +210,11 @@ pub fn frame(seconds: f64, tb: Timebase) -> Result<u64> {
     Ok(f.round() as u64)
 }
 impl Alignment {
-    /// Match measured words to the approved text. Missing/reordered words are errors;
-    /// no interpolation or invented word timestamps is used.
+    /// Match measured words to the approved text. Transcription is only a clock: words it
+    /// hears exactly (including split or joined tokens) anchor the timing, filler it adds
+    /// is ignored, and short misheard runs (names, numbers) are placed between their
+    /// measured neighbours and flagged `estimated`. A take that diverges more than that
+    /// fails, so the creator corrects it instead of getting invented timing.
     pub fn measured(
         source: &str,
         path: String,
@@ -136,45 +237,107 @@ impl Alignment {
                 "Alignment needs spoken script words and measured word timestamps.",
             ));
         }
-        let mut words = Vec::new();
         frame(duration, tb)?;
         let duration_frames = (duration * f64::from(tb.num) / f64::from(tb.den)).floor() as u64;
-        let mut at = 0;
         let mut prior = 0.0;
-        for word in expected {
-            let wanted = norm(&word.text);
-            let begin = at;
-            let mut joined = String::new();
-            while at < actual.len() && joined != wanted {
-                let w = actual[at];
-                if !w.start.is_finite()
-                    || !w.end.is_finite()
-                    || w.start < prior
-                    || w.end <= w.start
-                    || w.end > duration + 0.05
-                {
-                    return Err(invalid(
-                        "Measured words have invalid, overlapping or out-of-range times.",
-                    ));
-                }
-                joined.push_str(&norm(&w.word));
-                prior = w.end;
-                at += 1;
-                if !wanted.starts_with(&joined) {
-                    break;
-                }
+        for w in &actual {
+            if !w.start.is_finite()
+                || !w.end.is_finite()
+                || w.start < prior
+                || w.end <= w.start
+                || w.end > duration + 0.05
+            {
+                return Err(invalid(
+                    "Measured words have invalid, overlapping or out-of-range times.",
+                ));
             }
-            if joined != wanted {
+            prior = w.end;
+        }
+        let want: Vec<String> = expected.iter().map(|w| norm(&w.text)).collect();
+        let heard: Vec<String> = actual.iter().map(|w| norm(&w.word)).collect();
+        let spans = anchor(&want, &heard).map_err(|i| {
+            let w = &expected[i.min(expected.len() - 1)];
+            invalid(format!(
+                "Audio/script mismatch near line {}, word '{}': more than {MAX_GAP_WORDS} words in a row don't match. Correct the narration or the take; timing was not guessed.",
+                w.line + 1,
+                w.text
+            ))
+        })?;
+        let estimated = spans.iter().filter(|s| s.is_none()).count();
+        if estimated * 100 > expected.len() * MAX_ESTIMATED_PERCENT {
+            return Err(invalid(format!(
+                "Only {} of {} words were heard clearly enough to time. Check the take and the transcription language.",
+                expected.len() - estimated,
+                expected.len()
+            )));
+        }
+        let used: usize = spans.iter().flatten().map(|r| r.len()).sum();
+        let ignored = heard.len().saturating_sub(used);
+        if ignored * 100 > heard.len() * MAX_EXTRA_PERCENT && ignored > MAX_GAP_WORDS {
+            return Err(invalid(format!(
+                "The audio has {ignored} words that aren't in the approved narration. Check that this take belongs to these lines."
+            )));
+        }
+        // Seconds per script word: measured, or shared out between measured neighbours.
+        let mut times: Vec<Option<(f64, f64)>> = spans
+            .iter()
+            .map(|s| {
+                s.as_ref()
+                    .map(|r| (actual[r.start].start, actual[r.end - 1].end))
+            })
+            .collect();
+        // Two script words heard as one token ("Iron Man" / "ironman") share its time.
+        for i in 1..spans.len() {
+            if let (Some(a), Some(b)) = (&spans[i - 1], &spans[i])
+                && a == b
+                && let Some((s0, e0)) = times[i - 1]
+            {
+                let split = s0
+                    + (e0 - s0) * want[i - 1].len() as f64
+                        / (want[i - 1].len() + want[i].len()).max(1) as f64;
+                times[i - 1] = Some((s0, split));
+                times[i] = Some((split, e0));
+            }
+        }
+        let mut i = 0;
+        while i < times.len() {
+            if times[i].is_some() {
+                i += 1;
+                continue;
+            }
+            let run_end = (i..times.len())
+                .find(|&k| times[k].is_some())
+                .unwrap_or(times.len());
+            let from = if i == 0 {
+                0.0
+            } else {
+                times[i - 1].map_or(0.0, |t| t.1)
+            };
+            let to = times
+                .get(run_end)
+                .copied()
+                .flatten()
+                .map_or(actual.last().map_or(duration, |w| w.end), |t| t.0);
+            let chars: usize = want[i..run_end].iter().map(|w| w.len().max(1)).sum();
+            let mut at = from;
+            for k in i..run_end {
+                let share = (to - from) * want[k].len().max(1) as f64 / chars as f64;
+                times[k] = Some((at, at + share));
+                at += share;
+            }
+            i = run_end;
+        }
+        let mut words = Vec::new();
+        for (k, word) in expected.into_iter().enumerate() {
+            let (start, end) = times[k].expect("every word is timed");
+            let start_frame = frame(start, tb)?;
+            let end_frame = frame(end, tb)?.min(duration_frames);
+            if end_frame <= start_frame {
                 return Err(invalid(format!(
-                    "Audio/script mismatch at line {}, word '{}'. Correct the narration or supply verified forced alignment; timing was not guessed.",
+                    "Line {}, word '{}' is too short to place on the frame grid. Check the take around it.",
                     word.line + 1,
                     word.text
                 )));
-            }
-            let start_frame = frame(actual[begin].start, tb)?;
-            let end_frame = frame(actual[at - 1].end, tb)?.min(duration_frames);
-            if end_frame <= start_frame {
-                return Err(invalid("A measured word is shorter than the frame grid."));
             }
             words.push(Word {
                 line: word.line,
@@ -182,12 +345,8 @@ impl Alignment {
                 text: word.text,
                 start_frame,
                 end_frame,
+                estimated: spans[k].is_none(),
             });
-        }
-        if at != actual.len() {
-            return Err(invalid(
-                "Audio has additional words not present in the approved narration.",
-            ));
         }
         let alignment = Self {
             spec_version: 1,
@@ -458,21 +617,76 @@ mod tests {
         );
     }
     #[test]
-    fn missing_reordered_extra_and_overlapping_words_fail() {
+    fn badly_matching_takes_and_overlapping_times_fail() {
         let source = "## Test\nOne two three.\n";
         for words in [
+            // A third of the words unheard is too much to place.
             measured(&[("One", 0.1, 0.2), ("three", 0.3, 0.4)]),
             measured(&[("two", 0.1, 0.2), ("One", 0.3, 0.4), ("three", 0.5, 0.6)]),
-            measured(&[
-                ("One", 0.1, 0.2),
-                ("two", 0.3, 0.4),
-                ("three", 0.5, 0.6),
-                ("extra", 0.7, 0.8),
-            ]),
             measured(&[("One", 0.1, 0.4), ("two", 0.3, 0.5), ("three", 0.6, 0.7)]),
         ] {
             assert!(align(source, &words).is_err());
         }
+    }
+    fn long(source_words: &str, heard: &[&str]) -> Result<Alignment> {
+        let source = format!("## Test\nVO: {source_words}\n");
+        let step = 1.8 / heard.len() as f64;
+        let words: Vec<_> = heard
+            .iter()
+            .enumerate()
+            .map(|(i, w)| MeasuredWord {
+                word: (*w).into(),
+                start: i as f64 * step,
+                end: (i as f64 + 0.9) * step,
+            })
+            .collect();
+        align(&source, &words)
+    }
+    #[test]
+    fn misheard_names_are_placed_between_measured_neighbours() {
+        let script =
+            "Could Thor lift Mjolnir after the snap if Hermione helped him with one spell tonight?";
+        let heard = [
+            "could", "thor", "lift", "mule", "near", "after", "the", "snap", "if", "her", "my",
+            "oni", "helped", "him", "with", "one", "spell", "tonight",
+        ];
+        let a = long(script, &heard).unwrap();
+        assert_eq!(a.words.len(), 15);
+        let estimated: Vec<_> = a
+            .words
+            .iter()
+            .filter(|w| w.estimated)
+            .map(|w| w.text.as_str())
+            .collect();
+        assert_eq!(estimated, ["Mjolnir", "Hermione"]);
+        // Placed inside the gap its neighbours leave, in order.
+        let (lift, mj, after) = (&a.words[2], &a.words[3], &a.words[4]);
+        assert!(lift.end_frame <= mj.start_frame && mj.end_frame <= after.start_frame);
+        // Measured sidecars don't carry the flag.
+        let json = serde_json::to_string(&a.words[0]).unwrap();
+        assert!(!json.contains("estimated"), "{json}");
+    }
+    #[test]
+    fn joined_split_and_filler_tokens_still_match() {
+        let script = "Iron Man and Spider-Man could win this fight in about ten seconds flat.";
+        let heard = [
+            "ironman", "and", "um", "spider", "man", "could", "win", "this", "fight", "in",
+            "about", "ten", "seconds", "flat",
+        ];
+        let a = long(script, &heard).unwrap();
+        assert!(a.words.iter().all(|w| !w.estimated), "{:?}", a.words);
+        // "Iron" and "Man" share the one heard token, in order.
+        assert!(a.words[0].end_frame <= a.words[1].start_frame);
+    }
+    #[test]
+    fn a_long_unheard_stretch_fails_instead_of_being_guessed() {
+        let script =
+            "One two three four five six seven eight nine ten eleven twelve thirteen fourteen.";
+        let heard = [
+            "one", "two", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "x", "fourteen",
+        ];
+        let e = long(script, &heard).unwrap_err().to_string();
+        assert!(e.contains("mismatch") || e.contains("heard clearly"), "{e}");
     }
     #[test]
     fn stale_and_out_of_range_sidecars_fail() {

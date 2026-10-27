@@ -27,5 +27,5 @@ with any code changes the new schemas need.
 
 Production jobs/state, word alignment, executable style/visual treatments and render-plan
 schemas, plus the extended pipeline checks, are copied unchanged from `spearfia-spec`
-commit `084beb4` on `feat/production-execution`. See
+commit `dac8c11` on `feat/production-execution`. See
 [production execution](../docs/production-execution.md).

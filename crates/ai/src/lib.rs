@@ -27,6 +27,13 @@ pub struct Agent {
     pub model: String,
     pub effort: String,
     pub timeout_seconds: u64,
+    /// Let the agent's commands reach the network (Codex's sandbox blocks it otherwise).
+    #[serde(default)]
+    pub network: bool,
+    /// Absolute folders outside the project the agent may write (a shared media library,
+    /// a research folder). The project folder is always writable.
+    #[serde(default)]
+    pub writable_dirs: Vec<String>,
 }
 impl Agent {
     pub fn new(provider: Provider) -> Self {
@@ -36,6 +43,8 @@ impl Agent {
             model: String::new(),
             effort: String::new(),
             timeout_seconds: 3600,
+            network: false,
+            writable_dirs: Vec::new(),
         }
     }
     pub fn validate(&self) -> Result<()> {
@@ -46,6 +55,18 @@ impl Agent {
         {
             return Err(CoreError::Invalid(
                 "Invalid agent model, effort, executable or timeout (1–86400 seconds).".into(),
+            ));
+        }
+        if self.writable_dirs.len() > 16
+            || self.writable_dirs.iter().any(|d| {
+                d.len() > 4096
+                    || d.contains(['\0', '\r', '\n'])
+                    || !Path::new(d).is_absolute()
+                    || Path::new(d).parent().is_none()
+            })
+        {
+            return Err(CoreError::Invalid(
+                "Writable folders must be up to 16 absolute paths below a drive or root.".into(),
             ));
         }
         Ok(())
@@ -110,6 +131,13 @@ pub fn command(
                         json!(["mcp", "--project", project.to_string_lossy().as_ref()])
                     ),
                 ])
+                .args(
+                    agent
+                        .network
+                        .then_some(["-c", "sandbox_workspace_write.network_access=true"])
+                        .into_iter()
+                        .flatten(),
+                )
                 .arg("--output-schema")
                 .arg(schema)
                 .arg("--output-last-message")
@@ -137,6 +165,12 @@ pub fn command(
                 command.arg("--effort").arg(&agent.effort);
             }
         }
+    }
+    for dir in &agent.writable_dirs {
+        // Both CLIs refuse a missing folder; a library or research root is created on demand.
+        std::fs::create_dir_all(dir)
+            .map_err(|e| CoreError::Invalid(format!("Can't create writable folder {dir}: {e}")))?;
+        command.arg("--add-dir").arg(dir);
     }
     command.current_dir(project).stdin(Stdio::piped());
     #[cfg(windows)]
@@ -290,5 +324,38 @@ mod tests {
         assert!(args.contains(&"chosen-model".into()));
         assert!(args.iter().any(|s| s.contains("project with spaces")));
         assert!(!args.iter().any(|s| s.contains("bypass")));
+        assert!(!args.iter().any(|s| s.contains("network_access")));
+    }
+    #[test]
+    fn network_and_writable_folders_are_opt_in_per_agent() {
+        let dir = std::env::temp_dir().join(format!("spearfia-ai-lib-{}", std::process::id()));
+        let lib = dir.to_string_lossy().into_owned();
+        for provider in [Provider::Codex, Provider::Claude] {
+            let mut a = Agent::new(provider);
+            a.executable = "native-agent".into();
+            a.network = true;
+            a.writable_dirs = vec![lib.clone()];
+            let c = command(
+                &a,
+                Path::new("p"),
+                Path::new("s"),
+                Path::new("x"),
+                Path::new("y"),
+            )
+            .unwrap();
+            let args: Vec<_> = c.get_args().map(|s| s.to_string_lossy()).collect();
+            let at = args.iter().position(|s| s == "--add-dir").unwrap();
+            assert_eq!(args[at + 1], lib);
+            assert_eq!(
+                args.iter()
+                    .any(|s| s == "sandbox_workspace_write.network_access=true"),
+                provider == Provider::Codex
+            );
+        }
+        assert!(dir.is_dir());
+        let mut bad = Agent::new(Provider::Codex);
+        bad.writable_dirs = vec!["relative/library".into()];
+        assert!(bad.validate().is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -119,9 +119,12 @@ out of source control. No generation, alignment or export is initiated by loadin
 Alignment jobs send registered narration to VoiceStudio's local transcription route with
 word timestamps. Sidecars under `analysis/*.alignment.json` bind source audio SHA-256,
 exact script revision, analyzer identity, rational timebase and word frame intervals.
-Missing, reordered, extra, overlapping or out-of-range words fail validation. Split ASR
-tokens can match a hyphenated script word, but timing is never interpolated to fill a gap.
-Correct the take or supply verified alignment when transcription and narration disagree.
+Transcription is used as a clock, not as the text. Words it hears exactly anchor the
+timing; split or joined tokens ("spider man", "ironman") still match, and filler it adds
+("um") is skipped. Short misheard runs, typically names and numbers ("Mjolnir" heard as
+"mule near"), are placed between their measured neighbours by character length and marked
+`estimated`: at most 8 words in a row and 20% of the take. Beyond that, reordered speech,
+more than 15% extra words or invalid times fail: correct the take or the script.
 Stale audio/script sidecars cannot be used for assembly. Source durations use complete
 frames, matching FilmCraft at fractional frame rates; changing project fps requires
 alignment at the new rate. Recorded live speech needs its
