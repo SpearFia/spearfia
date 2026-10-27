@@ -1,10 +1,23 @@
 //! `spearfia-adapter-filmcraft`: FilmCraft adapter. Applies timeline plans through
 //! FilmCraft's MCP/control channel and reads editor state back.
 //!
-//! So far: finding the FilmCraft install. Creating the `.fcproj` happens on the first
-//! push, once the command IDs in `docs/filmcraft-recon.md` are confirmed.
+//! So far: finding the FilmCraft install ([`detect`]) and the one-way push ([`push()`],
+//! ADR 0005) through `filmcraft-cli mcp` ([`mcp`]).
 
 use std::path::{Path, PathBuf};
+
+pub mod mcp;
+mod push;
+pub use push::{Pushed, push};
+
+/// The `filmcraft-cli` to push with, or an error that says how to point Spear Fia at it.
+pub fn find_cli() -> spearfia_core::error::Result<PathBuf> {
+    detect().and_then(|i| i.cli).ok_or_else(|| {
+        spearfia_core::CoreError::Invalid(format!(
+            "filmcraft-cli not found. Install FilmCraft, add it to PATH, or set {ENV_OVERRIDE} to its folder."
+        ))
+    })
+}
 
 /// The crate name, used in logs.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
