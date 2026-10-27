@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/links/v1.json",
+  "title": "Spear Fia script-to-media links (links.json)",
+  "description": "Which media file covers which words of the script. A link stores the quoted words and the line they were on; tools find the quote again when lines move, and report a link as lost when its words are gone.",
+  "type": "object",
+  "required": [
+    "links"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "quote",
+          "line",
+          "media",
+          "role",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^k[0-9]+$",
+            "description": "Stable link ID (k1, k2, ...), never reused. Used as the cue_id of the clip a timeline plan places for it."
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The linked words, single-spaced, as they appear in the script (cues and formatting marks omitted)"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based line in script.md where the quote was when linked; a hint, not an address"
+          },
+          "media": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Project-relative or absolute path, /-separated"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "role": {
+            "enum": [
+              "a-roll",
+              "voiceover",
+              "b-roll",
+              "screen",
+              "graphics",
+              "other"
+            ],
+            "description": "Role of the media folder the file came from"
+          },
+          "kind": {
+            "enum": [
+              "picture",
+              "audio"
+            ],
+            "description": "picture: shown on screen; audio: heard (voiceover). Voiceover links are audio, the rest picture."
+          },
+          "in": {
+            "type": "string",
+            "pattern": "^([0-9]+:){0,2}[0-9]+(\\.[0-9]+)?$",
+            "description": "Source in point: HH:MM:SS, MM:SS or seconds (fractions allowed)"
+          },
+          "out": {
+            "type": "string",
+            "pattern": "^([0-9]+:){0,2}[0-9]+(\\.[0-9]+)?$",
+            "description": "Source out point, same form as in"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "next_id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The number the next new link ID gets, so a deleted link's ID is never handed out again"
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "TODO: word-level anchors once transcripts exist; whether a link can name a script cue ID."
+}

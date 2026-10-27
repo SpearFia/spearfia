@@ -9,3 +9,6 @@ repository.workspace = true
 
 [dependencies]
 spearfia-core.workspace = true
+spearfia-script.workspace = true
+spearfia-sync.workspace = true
+serde_json.workspace = true

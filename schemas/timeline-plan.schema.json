@@ -66,7 +66,7 @@
           },
           "track": {
             "type": "string",
-            "description": "e.g. V1, V2, A1"
+            "description": "V1, V2, ... or A1, A2, ...; tracks the sequence lacks are created. An item on a V track uses the source's picture only, on an A track its sound only."
           },
           "start_frame": {
             "type": "integer",
@@ -74,7 +74,8 @@
           },
           "duration_frames": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "For a transition, 0 means the editor's default length"
           },
           "source": {
             "type": "object",
@@ -100,7 +101,8 @@
             "description": "Capability to apply (effects and looks)"
           },
           "params": {
-            "type": "object"
+            "type": "object",
+            "description": "Free-form per kind. A transition's params: effect (editor transition ID, e.g. cross_dissolve), attach (cue_id of the clip it sits on), edge (in or out, default in)."
           },
           "intent": {
             "type": "object",
@@ -119,10 +121,57 @@
             "description": "Timing the script asked for, kept separate from the actual timing"
           }
         },
-        "additionalProperties": true
-      }
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "const": "transition"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "required": [
+                "params"
+              ],
+              "properties": {
+                "params": {
+                  "type": "object",
+                  "required": [
+                    "effect",
+                    "attach"
+                  ],
+                  "properties": {
+                    "effect": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "attach": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+                    },
+                    "edge": {
+                      "enum": [
+                        "in",
+                        "out"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "description": "Applied in array order to a fresh sequence, all or nothing: an editor adapter either realizes every item or leaves no result."
     }
   },
   "additionalProperties": true,
-  "$comment": "TODO: transaction/ordering semantics, track creation."
+  "$comment": "TODO: base_snapshot format and pull semantics (ADR 0005 in spearfia covers the push only)."
 }
