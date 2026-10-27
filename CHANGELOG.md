@@ -63,6 +63,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Built-in vision presets (`spearfia-vision`) matching `starter-pack/presets`.
 - FilmCraft detection (`spearfia-adapter-filmcraft`): `SPEARFIA_FILMCRAFT`, install folders,
   `PATH`.
+- Timeline plan compiler (`spearfia-sync::compile`, ADR 0005): `links.json` and script order
+  become a `timeline-plan`. Voiceover links set the timing on A1, picture links fill each
+  voiceover's stretch by word position, `:transition` cues attach to the next picture clip.
+  Lost, missing, short and unplaced links are reported, not guessed. Pinned `links` and
+  updated `timeline-plan` schemas.
 - Desktop app: Projects and Catalog tabs, New Project form, and the workspace with the
   workflow bar (Script, Media, Transitions, Effects, Music, Sound effects, Sync). The Script stage shows the
   script as a page with cue chips and transition dividers, plus a Markdown editing mode.

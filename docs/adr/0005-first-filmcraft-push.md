@@ -1,6 +1,6 @@
 # 5. First FilmCraft push: links to a review timeline
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-26
 
 ## Context
@@ -20,11 +20,12 @@ build on what this one writes.
 
 ### 1. Compile (pure, `spearfia-sync`)
 
-`compile(script, links, media, timebase) -> (TimelinePlan, Report)`, no I/O. `media` maps
-each link's media path to its FilmCraft item id and duration (from step 2a). Rules:
+`compile(script, links, media, timebase) -> (TimelinePlan, Vec<Issue>)`, no I/O. `media`
+maps each link's media path to its length in frames (`None` for a still); the adapter keeps
+its own path → FilmCraft item id map. Rules:
 
 1. **Anchor.** Each link is found again with `links::locate` (quote + line hint). Lost links
-   go to `Report.lost` and are skipped, never guessed.
+   are reported (`Issue::Lost`) and are skipped, never guessed.
 2. **Order.** Links sort by script position (line, first word).
 3. **VO sets the timing.** Audio-kind links are laid back to back on `A1` from frame 0.
    Length = `out - in` when both are set, else the file's duration from `in`.
@@ -36,13 +37,14 @@ each link's media path to its FilmCraft item id and duration (from step 2a). Rul
    replace it later). It runs until the next picture link on the same track, or the span
    end. Track by role: A-roll and screen on `V1`, B-roll `V2`, graphics `V3`. Picture
    placed with `audio: false`, so B-roll sound never fights the VO.
-   Media shorter than its slot keeps its own length and the shortfall goes in
-   `Report.short`. Picture links before the first VO anchor go to `Report.unplaced`.
+   Media shorter than its slot keeps its own length and the shortfall is reported
+   (`Issue::Short`). Picture links before the first VO anchor are reported
+   (`Issue::Unplaced`).
 5. **Transitions.** A `:transition[label]{#t1}` cue becomes a `transition` item on the
    first picture clip that starts at or after the cue's word, `edge: "in"`. Labels map to
    FilmCraft effects with a small table (`dissolve`/`cross dissolve` → `cross_dissolve`,
    `dip to black` → `dip_to_black`); `cut`, `hard cut` and `smash cut` add nothing; other
-   labels go to `Report.unmapped`.
+   labels are reported (`Issue::Unmapped`).
 6. **IDs and timing.** `cue_id` is the link id (`k12`) for clips and the cue id (`t1`) for
    transitions. Times are frames in the project's `timebase`. `intent` holds the slot
    the script asked for, the item's own fields what was actually placed.
@@ -100,9 +102,10 @@ Only the first row blocks the pull. None blocks the push.
   compiler's input should be pinned.
 - **`timeline-plan`.** Replace the `$comment` TODO with: items apply in array order; tracks
   `V1..Vn` / `A1..An` are created as needed; a plan applies to a fresh sequence, all or
-  nothing. Document transition `params`: `{effect, edge, attach: <cue_id of the clip>}`, and
-  `source.out_frame`. Both fit the current schema (`additionalProperties: true`), so this is
-  documentation, not a breaking change. Bump to `v1.1`.
+  nothing. Transition `params` require `effect` and `attach` (the clip's cue_id), with an
+  optional `edge`. Additive within the draft, so the ID stays `v1` (spearfia-spec
+  `docs/versioning.md`). `in_frame` plus `duration_frames` cover the source range, so no
+  `out_frame`.
 
 ## Consequences
 
@@ -116,9 +119,9 @@ Only the first row blocks the pull. None blocks the push.
 
 ## Build order (when approved)
 
-1. Spec: `links` schema, `timeline-plan` v1.1.
+1. Spec: `links` schema, `timeline-plan` push rules (done: spearfia-spec `feat/links-schema`).
 2. `spearfia-sync::compile` with tests over a small script and links fixture (VO spans,
-   proportional picture starts, lost and unplaced links, transition mapping).
+   proportional picture starts, lost and unplaced links, transition mapping) (done).
 3. Adapter: stdio MCP client, import, build, save; one integration test against
    `filmcraft-cli mcp` that is skipped when `detect()` finds no CLI.
 4. Core command, CLI subcommand, then the desktop button and MCP tool.
