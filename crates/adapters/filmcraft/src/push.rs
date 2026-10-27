@@ -97,7 +97,7 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
     fc.command(
         "file.newSequence",
         json!({"name": project.name(), "width": settings.resolution[0], "height": settings.resolution[1],
-               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": 3, "audio": 1}),
+               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": 3, "audio": 3}),
     )?;
     let mut clips: BTreeMap<&str, u64> = BTreeMap::new();
     for it in plan.items.iter().filter(|i| i.kind == Kind::Clip) {

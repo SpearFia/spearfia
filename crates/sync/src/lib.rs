@@ -152,9 +152,12 @@ pub fn compile(
             out,
             length,
         };
-        match l.kind {
-            LinkKind::Audio => vo.push(at),
-            LinkKind::Picture => pictures.push(at),
+        // Music and SFX are placed like pictures, on their own audio tracks.
+        match (l.kind, l.role) {
+            (LinkKind::Audio, MediaRole::Music | MediaRole::Sfx) | (LinkKind::Picture, _) => {
+                pictures.push(at)
+            }
+            (LinkKind::Audio, _) => vo.push(at),
         }
     }
     let order =
@@ -201,11 +204,18 @@ pub fn compile(
     }
 
     // Pictures start where their words are spoken and run to the next picture on their
-    // track or the end of their voiceover span, whichever comes first.
+    // track or the end of their voiceover span, whichever comes first. Music and SFX run to
+    // the next one on their track or the end of all voiceover (`now`).
     let mut slots = Vec::new();
     for p in &pictures {
+        let audio = matches!(p.link.role, MediaRole::Music | MediaRole::Sfx);
         match time_at(&spans, &words, p.key) {
-            Some((t, s)) => slots.push((track_for(p.link.role), t, s.start + s.len, p)),
+            Some((t, s)) => slots.push((
+                track_for(p.link.role),
+                t,
+                if audio { now } else { s.start + s.len },
+                p,
+            )),
             None => issues.push(Issue::Unplaced {
                 link: p.link.id.clone(),
             }),
@@ -226,7 +236,8 @@ pub fn compile(
             });
             continue;
         }
-        let intent = (dur < slot).then(|| {
+        // A sound effect is meant to be shorter than the time until the next one.
+        let intent = (dur < slot && p.link.role != MediaRole::Sfx).then(|| {
             issues.push(Issue::Short {
                 link: p.link.id.clone(),
                 frames: slot - dur,
@@ -412,6 +423,8 @@ fn track_for(role: MediaRole) -> &'static str {
         MediaRole::ARoll | MediaRole::Screen => "V1",
         MediaRole::Graphics => "V3",
         MediaRole::BRoll | MediaRole::Voiceover | MediaRole::Other => "V2",
+        MediaRole::Music => "A2",
+        MediaRole::Sfx => "A3",
     }
 }
 

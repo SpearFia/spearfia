@@ -16,6 +16,7 @@
 //! Script edits are validated in `spearfia-core::editing` and applied here.
 
 pub mod links;
+pub mod timing;
 pub mod transitions;
 
 use serde::{Deserialize, Serialize};

@@ -372,12 +372,15 @@ impl VisualStage {
             }
         }
         if let Some(range) = &resolution.range {
-            let seconds =
-                spearfia_script::parse(narration.get(range.clone()).unwrap_or("")).est_seconds();
-            ui.label(widgets::muted(format!(
-                "Linked narration: ~{} (150 wpm estimate)",
-                widgets::mmss(seconds)
-            )));
+            let (seconds, recorded) = crate::vo_timing::passage_seconds(narration, range.clone());
+            ui.label(widgets::muted(if recorded {
+                format!("Linked narration: {} (recorded VO)", widgets::mmss(seconds))
+            } else {
+                format!(
+                    "Linked narration: ~{} (150 wpm estimate)",
+                    widgets::mmss(seconds)
+                )
+            }));
         } else {
             ui.label(widgets::text(
                 format!(

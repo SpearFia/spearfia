@@ -1,4 +1,4 @@
-# Stage 7: Assembly
+# Stage 8: Assembly
 
 **Run with:** Codex with the Spear Fia MCP. FilmCraft must be installed.
 

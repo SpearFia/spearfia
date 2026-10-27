@@ -11,17 +11,20 @@ earlier work.
 | 2 | Ideas | [02-ideas.md](02-ideas.md) | Gemini (no MCP; uses the CLI) |
 | 3 | Script | [03-script.md](03-script.md) | Claude or Codex |
 | 4 | Visual Script and thumbnail concept | [04-visual-script.md](04-visual-script.md) | Claude or Codex |
-| 5 | Voiceover linking | [05-voiceover.md](05-voiceover.md) | Codex |
+| 5 | Voiceover (VoiceStudio) | [05-voiceover.md](05-voiceover.md) | Codex or Claude |
 | 6 | Media search | [06-media-search.md](06-media-search.md) | Codex, Tera xhigh |
-| 7 | Assembly | [07-assembly.md](07-assembly.md) | Codex |
-| 8 | Thumbnail and description | [08-thumbnail.md](08-thumbnail.md) | Claude or Codex |
+| 7 | Music and SFX (ComfyUI) | [07-music-sfx.md](07-music-sfx.md) | Codex or Claude |
+| 8 | Assembly | [08-assembly.md](08-assembly.md) | Codex |
+| 9 | Thumbnail and description | [09-thumbnail.md](09-thumbnail.md) | Claude or Codex |
 
 Your gates: pick the idea after stage 2, approve the saved script in the desktop after
-stage 3, review the FilmCraft timeline after stage 7.
+stage 3, listen to the first VO section (stage 5) and first bed/SFX (stage 7), review
+the FilmCraft timeline after stage 8.
 
 ## Setup (once)
 
-- **Skills**: `channel-dna`, `media-search` and `learn-channel-scripts` are junctions
+- **Skills**: `channel-dna`, `media-search`, `voiceover`, `audio-gen` and
+  `learn-channel-scripts` are junctions
   from the skills repo into `~/.claude/skills` and `~/.codex/skills`. Both Codex accounts
   share `~/.codex/skills` and `~/.codex/config.toml`.
 - **Spear Fia MCP** in `~/.codex/config.toml` (both accounts):

@@ -2964,6 +2964,7 @@ dependencies = [
  "spearfia-core",
  "spearfia-mcp",
  "spearfia-ops",
+ "spearfia-script",
 ]
 
 [[package]]

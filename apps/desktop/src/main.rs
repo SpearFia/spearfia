@@ -12,6 +12,7 @@ mod icons;
 mod screens;
 mod script_view;
 mod theme;
+mod vo_timing;
 mod widgets;
 
 use std::path::Path;

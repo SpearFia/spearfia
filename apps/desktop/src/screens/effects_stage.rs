@@ -174,7 +174,7 @@ impl EffectsStage {
         catalog: &Catalog,
     ) {
         let parsed = spearfia_script::parse(script.source());
-        let tl = timing::timeline(&parsed);
+        let tl = crate::vo_timing::timeline(&parsed);
         let all = looks::looks(&parsed, &tl);
         let timed = looks::timed(&parsed, &tl);
         let resolved = script_view::resolve(&parsed, links);
@@ -375,7 +375,7 @@ impl EffectsStage {
     fn apply(&mut self, project: &Project, script: &mut ScriptStage, e: Edit) {
         let src = script.source().to_owned();
         let parsed = spearfia_script::parse(&src);
-        let tl = timing::timeline(&parsed);
+        let tl = crate::vo_timing::timeline(&parsed);
         let all = looks::looks(&parsed, &tl);
         let find = |k: &str| all.iter().find(|l| key(l, &parsed) == k);
         let out = match e {

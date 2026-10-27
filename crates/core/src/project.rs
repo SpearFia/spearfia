@@ -108,6 +108,10 @@ pub enum MediaRole {
     BRoll,
     Screen,
     Graphics,
+    /// Music beds: play from their words until the next music.
+    Music,
+    /// Sound effects: play once at their word.
+    Sfx,
     Other,
 }
 
@@ -119,6 +123,8 @@ impl MediaRole {
             Self::BRoll => "B-roll",
             Self::Screen => "Screen",
             Self::Graphics => "Graphics",
+            Self::Music => "Music",
+            Self::Sfx => "SFX",
             Self::Other => "Other",
         }
     }
@@ -148,6 +154,8 @@ impl MediaFolder {
             Self::new("B-roll", MediaRole::BRoll),
             Self::new("Screen", MediaRole::Screen),
             Self::new("Graphics", MediaRole::Graphics),
+            Self::new("Music", MediaRole::Music),
+            Self::new("SFX", MediaRole::Sfx),
         ]
     }
 }

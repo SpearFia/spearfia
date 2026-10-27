@@ -9,6 +9,7 @@
 //! a `:music[stop]`, or the end of the script.
 
 use crate::{Block, Directive, LineKind, Script, Segment, estimate_seconds};
+use std::collections::HashMap;
 
 /// Estimated length of an `[ON SCREEN: ...]` line with no VO under it.
 pub const ON_SCREEN_SECONDS: f32 = 2.0;
@@ -110,6 +111,12 @@ pub fn is_stop(cue: &Directive) -> bool {
 
 /// Lay the script out over time.
 pub fn timeline(script: &Script) -> Timeline {
+    timeline_measured(script, &HashMap::new())
+}
+
+/// [`timeline`], with spoken lines timed from `measured` (script line number → seconds of
+/// recorded voiceover) where present, and estimated elsewhere.
+pub fn timeline_measured(script: &Script, measured: &HashMap<usize, f32>) -> Timeline {
     let mut t = Timeline::default();
     let mut now = 0.0f32;
     // Music cue starts (and stops) in order: (time, block, cue).
@@ -157,10 +164,17 @@ pub fn timeline(script: &Script) -> Timeline {
                     at: now,
                 });
             }
-            Block::Line { kind, segments, .. } => {
+            Block::Line {
+                kind,
+                segments,
+                line,
+            } => {
                 let words: usize = crate::word_count(segments);
                 let len = match kind {
-                    LineKind::Spoken | LineKind::Live => estimate_seconds(words),
+                    LineKind::Spoken | LineKind::Live => measured
+                        .get(line)
+                        .copied()
+                        .unwrap_or_else(|| estimate_seconds(words)),
                     LineKind::OnScreen => ON_SCREEN_SECONDS,
                     LineKind::Note => 0.0,
                 };
