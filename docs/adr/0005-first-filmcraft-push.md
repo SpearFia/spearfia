@@ -58,21 +58,23 @@ process and talks newline-delimited JSON-RPC over its stdio: `initialize`, then
 `tools/call`. That is about a hundred lines on `serde_json` and `std::process`, so no MCP
 client crate is added.
 
-1. **Import.** `media_import {paths}` (absolute) for every distinct linked file, then
-   `project_inspect` for item ids and durations → `media` for step 1.
-2. **Compile** the plan (step 1) and write it to `sync/plans/<plan_id>.json`.
-3. **Build.** `file.newSequence {name, fps, width, height, video: 3, audio: 1}`, then
-   `command_batch` of `timeline.place {item, track, frame, sourceIn, duration, audio|video}`
-   in plan order, then a second batch from the returned clip ids: `clip.rename {clip,
-   name: "<file name> {#k12}"}` for each clip and `sequence.applyVideoTransition {clip,
-   edge, effect, frames}` for each transition. Frames go to ticks as
+1. **Import.** `media_import {paths: [one]}` (absolute) per distinct linked file, since
+   `file.import` drops the ids of files it can't read and the rest would shift. Then
+   `project_inspect` for item types and durations → `media` for step 1 (stills: `None`).
+2. **Compile** the plan (step 1).
+3. **Build**, one `command_run` per step so a failure names its item:
+   `file.newSequence {name, fps, width, height, sampleRate, video: 3, audio: 1}`, then per
+   clip `timeline.place {item, track, frame, sourceIn, duration}` (`audio: false` on V
+   tracks) and `clip.rename {clip, name: "<file name> {#k12}"}`, then per transition
+   `sequence.applyVideoTransition {clip, edge, effect, frames}`. Frames go to ticks as
    `frames * 254_016_000_000 * den / num` in `i128` (exact for the NTSC rates).
-4. **Commit.** `file.saveAs {path: "sync/review-<plan_id>.fcproj"}`, then `sequence_inspect`
-   saved as `sync/snapshots/<plan_id>.json`, the base snapshot for the future pull.
+4. **Commit.** `file.saveAs {path: "sync/review-<plan_id>.fcproj"}`, then the plan to
+   `sync/plans/<plan_id>.json` and `sequence_inspect` to `sync/snapshots/<plan_id>.json`,
+   the base snapshot for the future pull.
 
 **Transaction = the save.** Nothing reaches disk until step 4. If any step fails, the
-adapter kills the child, the in-memory project is gone, and the plan file is marked
-failed in the report. No rollback code. Each push writes a **new** `.fcproj` and never
+adapter kills the child, the in-memory project is gone, and the error names the step.
+No rollback code. Each push writes a **new** `.fcproj` and never
 overwrites an earlier one, because the creator may already have edited it in FilmCraft.
 
 Bridge mode (pushing into the running app) is later. It needs the rollback that headless
@@ -123,5 +125,5 @@ Only the first row blocks the pull. None blocks the push.
 2. `spearfia-sync::compile` with tests over a small script and links fixture (VO spans,
    proportional picture starts, lost and unplaced links, transition mapping) (done).
 3. Adapter: stdio MCP client, import, build, save; one integration test against
-   `filmcraft-cli mcp` that is skipped when `detect()` finds no CLI.
+   `filmcraft-cli mcp` that is skipped when `detect()` finds no CLI (done).
 4. Core command, CLI subcommand, then the desktop button and MCP tool.

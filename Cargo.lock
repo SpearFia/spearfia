@@ -2792,7 +2792,10 @@ dependencies = [
 name = "spearfia-adapter-filmcraft"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "spearfia-core",
+ "spearfia-script",
+ "spearfia-sync",
 ]
 
 [[package]]

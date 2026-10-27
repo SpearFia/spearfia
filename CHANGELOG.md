@@ -68,6 +68,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   voiceover's stretch by word position, `:transition` cues attach to the next picture clip.
   Lost, missing, short and unplaced links are reported, not guessed. Pinned `links` and
   updated `timeline-plan` schemas.
+- FilmCraft push (`spearfia-adapter-filmcraft::push`, ADR 0005): imports the linked media into
+  a headless `filmcraft-cli mcp` session, builds the compiled plan (clips named with their
+  `{#cue}` IDs, transitions), and saves a new `sync/review-<plan>.fcproj` with the plan and
+  a sequence snapshot. Nothing is written if any step fails; earlier reviews are never
+  overwritten.
 - Desktop app: Projects and Catalog tabs, New Project form, and the workspace with the
   workflow bar (Script, Media, Transitions, Effects, Music, Sound effects, Sync). The Script stage shows the
   script as a page with cue chips and transition dividers, plus a Markdown editing mode.
