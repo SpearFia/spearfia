@@ -150,8 +150,12 @@ fn bundled() -> Vec<Entry> {
 
 /// Install the default document font. Call once at startup.
 pub fn init(ctx: &egui::Context) {
-    let mut b = book().lock().expect("font book");
+    let mut b = book()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     load(&mut b, ctx, DEFAULT);
+    // The shared book may already be loaded by another egui context.
+    ctx.set_fonts(b.defs.clone());
     // The default is usable from the first frame.
     if let Some(l) = b.loaded.get_mut(&DEFAULT.to_lowercase()) {
         l.1 = 0;
@@ -449,5 +453,18 @@ mod tests {
             found[1].faces.contains_key(&Face::Regular),
             "falls back to a face as regular"
         );
+    }
+    #[test]
+    fn every_new_context_gets_the_cached_default_font() {
+        for _ in 0..2 {
+            let ctx = egui::Context::default();
+            init(&ctx);
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.label(
+                    egui::RichText::new("Second context").family(family(DEFAULT, Face::SemiBold)),
+                );
+            });
+            output.textures_delta.clear();
+        }
     }
 }

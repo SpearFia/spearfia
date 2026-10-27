@@ -4,9 +4,21 @@ A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
 
 ## One command layer
 
-The UI, the CLI, the MCP server and the local API all call the same typed operations in
-`spearfia-core`. Because AI actions and human actions go through one layer, they share one
-undo history: you can undo what the AI did the same way you undo your own edit.
+The goal is one layer: `spearfia-ops`. A command computes a plan (new text, summary, base
+version); applying it refuses stale writes and records it in `sync/history.jsonl`, so undo
+works the same from the desktop, the CLI or an agent. Transitions are the first commands
+there.
+
+Not there yet:
+
+- MCP/HTTP Script and Visual Script edits use `spearfia-core::editing`: revision-guarded
+  commands with bounded per-server undo/redo. Clean external changes enter the desktop
+  document undo history, but this undo is separate from the `ops` history and is lost when
+  the server exits.
+- Media links save through `spearfia-core::links` under the project edit lock, outside
+  any undo history.
+
+New commands go in `spearfia-ops`. Moving the two paths above onto it is planned.
 
 ## Intent here, realization in the editor
 
@@ -62,3 +74,24 @@ has a namespaced ID (`spearfia/<asset>@<semver>`), a required license, a source 
 The script is a plain `script.md` (see `spearfia-spec/docs/script-directives.md`). Spear Fia
 watches it for external edits and writes it back round-trip safe: text it did not change
 stays byte-for-byte the same. Lives in `spearfia-script`.
+
+## Channel knowledge and creator approval
+
+Channel guides are shared Markdown in the app config's `channels/<id>/` folders. A
+video gets a `channel.md` snapshot of those guides, independent of its Vision, so later
+channel lessons do not silently change an in-progress brief. These are ordinary Markdown
+documents, with no change to the project JSON schema. The core channel operations back
+both the desktop editor and read-only CLI; stale saves and oversized inputs are rejected.
+
+The creator's approval records the exact saved script and channel brief in
+`sync/approved-script.md` and `sync/approved-channel.md`. Production handoff compares the
+current content with both records and refuses changed or unapproved content. Agents
+can read/check the handoff but have no CLI approval operation. This is a local workflow
+gate, not a security boundary against arbitrary filesystem writes.
+
+See [agents.md](agents.md) for implemented agent entry points and the current boundaries
+of implemented MCP/API editing and the remaining generation and FilmCraft sync scaffolds.
+
+## Visual Script
+
+Optional `visuals/visuals.md` holds visual directions with stable cue IDs, narration anchors, production methods, references and independent asset/review states. The desktop reuses the document editor. Core operations preserve unknown prose/metadata and back CLI exports plus the implemented project-bound MCP stdio/local HTTP editing tools. See [the Visual Script guide](visual-script.md) for current behavior and revision handling.

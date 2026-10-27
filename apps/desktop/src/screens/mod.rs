@@ -2,6 +2,7 @@
 //! project with its workflow stages.
 
 pub mod catalog;
+pub mod channels;
 pub mod effects_stage;
 pub mod home;
 pub mod media_stage;
@@ -12,4 +13,6 @@ pub mod script_stage;
 pub mod sfx_stage;
 pub mod timeline;
 pub mod transitions_stage;
+pub mod vision_catalog;
+pub mod visual_stage;
 pub mod workspace;

@@ -5,11 +5,14 @@
 //! Every read prints the script's version; pass it back with `--expect` so a write fails
 //! instead of landing on a script that changed in between. `--dry-run` shows the diff and
 //! writes nothing.
+//!
+//! `mcp` and `api` serve the agent tools (see docs/agents.md); `channels`, `project` and
+//! `visuals` are read-only. Production handoff needs the creator's approval in the desktop.
 
 use clap::{Parser, Subcommand};
-use spearfia_core::project::Project;
+use spearfia_core::{app_state, channels, project::Project};
 use spearfia_ops::{Doc, Origin, Plan, transitions};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Parser)]
@@ -46,6 +49,56 @@ enum Cmd {
     Undo,
     /// List recorded changes, newest last.
     History,
+    /// Serve the agent tools over MCP stdio for `--project`.
+    Mcp,
+    /// Serve the agent tools over authenticated loopback HTTP. Needs SPEARFIA_API_TOKEN.
+    Api {
+        /// 0 picks a free port and prints the URL to stderr.
+        #[arg(long, default_value_t = 9877)]
+        port: u16,
+    },
+    /// Read shared channel guides (SPEARFIA_CONFIG_DIR or the app config folder).
+    Channels {
+        #[command(subcommand)]
+        op: ChannelOp,
+    },
+    /// Print the drafting brief, the approved production handoff, or approval status.
+    #[command(name = "project")]
+    ProjectInfo {
+        #[arg(value_enum)]
+        action: ProjectAction,
+        /// Project folder; defaults to `--project`.
+        folder: Option<PathBuf>,
+    },
+    /// Read or export the Visual Script.
+    Visuals {
+        #[arg(value_enum)]
+        action: VisualsAction,
+        /// Project folder; defaults to `--project`.
+        folder: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ChannelOp {
+    List,
+    Read { id: String },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ProjectAction {
+    Brief,
+    Handoff,
+    Status,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum VisualsAction {
+    Read,
+    CueSheet,
+    Storyboard,
+    Prompts,
+    Handoff,
 }
 
 #[derive(Subcommand)]
@@ -76,7 +129,42 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: &Cli) -> Result<(), String> {
-    let project = Project::open(&cli.project).map_err(|e| e.to_string())?;
+    let open = |folder: &Option<PathBuf>| {
+        Project::open(folder.as_deref().unwrap_or(&cli.project)).map_err(|e| e.to_string())
+    };
+    match &cli.cmd {
+        Cmd::Mcp => return serve_mcp(&cli.project),
+        Cmd::Api { port } => return serve_api(&cli.project, *port),
+        Cmd::Channels { op } => {
+            let config = app_state::config_dir()
+                .ok_or("No app config folder is available; set SPEARFIA_CONFIG_DIR.")?;
+            println!("{}", read_channels(op, &config)?);
+            return Ok(());
+        }
+        Cmd::ProjectInfo { action, folder } => {
+            let project = open(folder)?;
+            let text = match action {
+                ProjectAction::Status => project.script_approval(None).map(|a| a.label().into()),
+                a => project.agent_brief(matches!(a, ProjectAction::Handoff), None),
+            };
+            println!("{}", text.map_err(|e| e.to_string())?);
+            return Ok(());
+        }
+        Cmd::Visuals { action, folder } => {
+            let project = open(folder)?;
+            let text = match action {
+                VisualsAction::Read => project.read_visuals(),
+                VisualsAction::CueSheet => project.export_visuals("cue-sheet"),
+                VisualsAction::Storyboard => project.export_visuals("storyboard"),
+                VisualsAction::Prompts => project.export_visuals("prompts"),
+                VisualsAction::Handoff => project.export_visuals("handoff"),
+            };
+            println!("{}", text.map_err(|e| e.to_string())?);
+            return Ok(());
+        }
+        _ => {}
+    }
+    let project = open(&None)?;
     let err = |e: spearfia_ops::OpError| e.to_string();
     match &cli.cmd {
         Cmd::Cuts => {
@@ -161,8 +249,51 @@ fn run(cli: &Cli) -> Result<(), String> {
                 }
             }
         }
+        Cmd::Mcp | Cmd::Api { .. } | Cmd::Channels { .. } | Cmd::ProjectInfo { .. } => {}
+        Cmd::Visuals { .. } => {}
     }
     Ok(())
+}
+
+fn read_channels(op: &ChannelOp, config: &Path) -> Result<String, String> {
+    match op {
+        ChannelOp::List => Ok(channels::list(config)
+            .map_err(|e| e.to_string())?
+            .iter()
+            .map(|c| format!("{}\t{}\t{}", c.id, c.title, c.root.display()))
+            .collect::<Vec<_>>()
+            .join("\n")),
+        ChannelOp::Read { id } => channels::load(config, id)
+            .and_then(|c| c.brief())
+            .map_err(|e| e.to_string()),
+    }
+}
+
+fn serve_mcp(root: &Path) -> Result<(), String> {
+    let mut server = spearfia_mcp::Server::open(root).map_err(|e| e.to_string())?;
+    match spearfia_mcp::serve_stdio(
+        &mut server,
+        std::io::stdin().lock(),
+        std::io::stdout().lock(),
+    ) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn serve_api(root: &Path, port: u16) -> Result<(), String> {
+    let token = std::env::var("SPEARFIA_API_TOKEN").map_err(|_| "Set SPEARFIA_API_TOKEN to a random secret of at least 32 characters before starting the local API.".to_owned())?;
+    if token.len() < 32 || token.len() > 256 || !token.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err("Use 32–256 random printable ASCII characters for SPEARFIA_API_TOKEN.".into());
+    }
+    let mut server = spearfia_mcp::Server::open(root).map_err(|e| e.to_string())?;
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    eprintln!(
+        "Spear Fia API listening at http://{}/v1/tools; bearer authentication required.",
+        listener.local_addr().map_err(|e| e.to_string())?
+    );
+    spearfia_mcp::http::serve(&mut server, listener, &token).map_err(|e| e.to_string())
 }
 
 /// Show or apply a plan.
@@ -213,8 +344,62 @@ mod tests {
             "spearfia transition duration 2 none",
             "spearfia transition fill whip-pan",
             "spearfia undo",
+            "spearfia mcp --project p",
+            "spearfia api --project p --port 0",
+            "spearfia channels list",
+            "spearfia channels read science-channel",
+            "spearfia project handoff p",
+            "spearfia project status",
+            "spearfia visuals cue-sheet p",
         ] {
             Cli::try_parse_from(args.split(' ')).unwrap_or_else(|e| panic!("{args}: {e}"));
         }
+        for args in [
+            "spearfia channels",
+            "spearfia project approve p",
+            "spearfia visuals render p",
+        ] {
+            assert!(Cli::try_parse_from(args.split(' ')).is_err(), "{args}");
+        }
+    }
+
+    #[test]
+    fn shared_channel_context_is_readable_through_cli() {
+        let dir = std::env::temp_dir().join(format!(
+            "spearfia-channel-cli-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        channels::create(&dir, "Science Channel").unwrap();
+        assert!(
+            read_channels(&ChannelOp::List, &dir)
+                .unwrap()
+                .contains("science-channel")
+        );
+        let brief = read_channels(
+            &ChannelOp::Read {
+                id: "science-channel".into(),
+            },
+            &dir,
+        )
+        .unwrap();
+        assert!(
+            brief.contains("lessons.md")
+                && brief.contains("VoiceStudio")
+                && brief.contains("creator's approval")
+        );
+        assert!(
+            read_channels(
+                &ChannelOp::Read {
+                    id: "../outside".into()
+                },
+                &dir
+            )
+            .is_err()
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

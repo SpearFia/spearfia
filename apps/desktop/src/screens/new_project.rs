@@ -26,6 +26,8 @@ enum Conn {
 
 pub struct NewProjectForm {
     name: String,
+    channels: Vec<spearfia_core::channels::Channel>,
+    channel: Option<String>,
     series: String,
     /// Folder new projects go in; the project folder is `<parent>/<slug>`.
     parent: String,
@@ -35,7 +37,8 @@ pub struct NewProjectForm {
     resolution: [u32; 2],
     timebase: Timebase,
     runtime: String,
-    preset: Option<&'static str>,
+    preset: Option<String>,
+    visions: Vec<spearfia_core::visions::Vision>,
     goal: String,
     avg_shot: f32,
     cut_style: &'static str,
@@ -59,10 +62,17 @@ pub struct NewProjectForm {
 const STEPS: usize = 5;
 
 impl NewProjectForm {
-    pub fn new(projects_dir: Option<PathBuf>, series: Option<String>) -> Self {
-        let preset = spearfia_vision::builtin_presets().first();
+    pub fn new(
+        projects_dir: Option<PathBuf>,
+        series: Option<String>,
+        visions: Vec<spearfia_core::visions::Vision>,
+        channels: Vec<spearfia_core::channels::Channel>,
+    ) -> Self {
+        let preset = visions.first();
         Self {
             name: String::new(),
+            channels,
+            channel: None,
             series: series.unwrap_or_default(),
             parent: projects_dir
                 .map(|p| p.display().to_string())
@@ -72,10 +82,11 @@ impl NewProjectForm {
             resolution: Format::LongForm.default_resolution(),
             timebase: Timebase::FPS_59_94,
             runtime: "10:00".into(),
-            preset: preset.map(|p| p.name),
+            preset: preset.map(|p| p.name().to_owned()),
             goal: String::new(),
-            avg_shot: preset.map_or(2.0, |p| p.avg_shot_seconds),
-            cut_style: preset.map_or("jump", |p| p.cut_style),
+            avg_shot: preset.map_or(2.0, |p| p.avg_shot_seconds()),
+            cut_style: preset.map_or("jump", |p| p.cut_style()),
+            visions,
             script_mode: ScriptMode::Sections,
             import_path: String::new(),
             folders: MediaFolder::defaults()
@@ -91,6 +102,14 @@ impl NewProjectForm {
             done: [false; STEPS],
             scroll_to: None,
         }
+    }
+
+    pub fn choose_channel(&mut self, id: &str) -> Result<(), String> {
+        if !self.channels.iter().any(|c| c.id == id) {
+            return Err("The selected channel is no longer available.".into());
+        }
+        self.channel = Some(id.to_owned());
+        Ok(())
     }
 
     fn slug(&self) -> String {
@@ -139,7 +158,19 @@ impl NewProjectForm {
             }
             ScriptMode::Import => ScriptStart::Import(PathBuf::from(self.import_path.trim())),
         };
+        let channel_brief = match &self.channel {
+            Some(id) => Some(
+                self.channels
+                    .iter()
+                    .find(|c| &c.id == id)
+                    .ok_or_else(|| "The selected channel is no longer available.".to_owned())?
+                    .brief()
+                    .map_err(|e| e.to_string())?,
+            ),
+            None => None,
+        };
         Ok(NewProject {
+            channel_brief,
             name: self.name.trim().to_owned(),
             series: Some(self.series.clone()),
             root,
@@ -148,7 +179,12 @@ impl NewProjectForm {
             timebase: self.timebase,
             target_runtime_seconds: self.runtime_seconds(),
             vision: NewVision {
-                extends: self.preset.map(Into::into),
+                extends: self.preset.clone(),
+                template: self
+                    .preset
+                    .as_deref()
+                    .and_then(|name| self.visions.iter().find(|v| v.name() == name))
+                    .map(|v| v.document.clone()),
                 goal: self.goal.clone(),
                 avg_shot_seconds: Some(self.avg_shot),
                 cut_style: Some(self.cut_style.into()),
@@ -403,6 +439,23 @@ fn basics(f: &mut NewProjectForm, ui: &mut egui::Ui) {
         {
             f.error = None;
         }
+        field_label(ui, "Channel (optional)");
+        egui::ComboBox::from_id_salt("new-project-channel")
+            .selected_text(
+                f.channels
+                    .iter()
+                    .find(|c| Some(&c.id) == f.channel.as_ref())
+                    .map_or("No channel", |c| c.title.as_str()),
+            )
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut f.channel, None, "No channel");
+                for c in &f.channels {
+                    ui.selectable_value(&mut f.channel, Some(c.id.clone()), &c.title);
+                }
+            });
+        ui.label(muted(
+            "The video keeps a snapshot of its channel guides; its Vision can vary by episode.",
+        ));
         field_label(ui, "Series (optional)");
         ui.add(
             egui::TextEdit::singleline(&mut f.series)
@@ -472,16 +525,17 @@ fn basics(f: &mut NewProjectForm, ui: &mut egui::Ui) {
 fn vision(f: &mut NewProjectForm, ui: &mut egui::Ui) {
     let preset = f
         .preset
-        .and_then(spearfia_vision::preset)
-        .map_or("No preset", |p| p.title);
+        .as_deref()
+        .and_then(|name| f.visions.iter().find(|v| v.name() == name))
+        .map_or("No preset", |p| p.title());
     let summary = format!("{preset} · {:.1}s shots · {} cuts", f.avg_shot, f.cut_style);
     step(ui, f, 1, "Vision", summary, Ok(()), |f, ui| {
         ui.label(muted(
             "Steers the AI's script notes, catalog ranking and pacing. Pick a preset, then adjust.",
         ));
         ui.add_space(4.0);
-        for p in spearfia_vision::builtin_presets() {
-            let on = f.preset == Some(p.name);
+        for p in &f.visions {
+            let on = f.preset.as_deref() == Some(p.name());
             let r = card(
                 if on {
                     theme::tint(theme::CUE_VISION, 0.08)
@@ -495,19 +549,23 @@ fn vision(f: &mut NewProjectForm, ui: &mut egui::Ui) {
                 ui.set_width(ui.available_width());
                 ui.label(
                     text(
-                        p.title,
+                        p.title(),
                         15.0,
                         if on { theme::CUE_VISION } else { theme::TEXT },
                     )
                     .strong(),
                 );
-                ui.label(muted(p.goal));
+                ui.label(muted(p.goal()));
                 ui.horizontal_wrapped(|ui| {
-                    for (k, w) in p.weights {
+                    for (k, w) in p
+                        .weight_map()
+                        .into_iter()
+                        .collect::<std::collections::BTreeMap<_, _>>()
+                    {
                         widgets::tag(
                             ui,
                             &format!("{k} {w:+.1}"),
-                            if *w >= 0.0 { theme::OK } else { theme::DANGER },
+                            if w >= 0.0 { theme::OK } else { theme::DANGER },
                         );
                     }
                 });
@@ -515,9 +573,9 @@ fn vision(f: &mut NewProjectForm, ui: &mut egui::Ui) {
             .response
             .interact(egui::Sense::click());
             if r.clicked() {
-                f.preset = Some(p.name);
-                f.avg_shot = p.avg_shot_seconds;
-                f.cut_style = p.cut_style;
+                f.preset = Some(p.name().to_owned());
+                f.avg_shot = p.avg_shot_seconds();
+                f.cut_style = p.cut_style();
             }
         }
         field_label(ui, "Goal for this video");
@@ -684,6 +742,9 @@ fn preview(f: &NewProjectForm, ui: &mut egui::Ui) {
         ("├ script/script.md".into(), theme::TEXT_2),
         ("├ links.json".into(), theme::TEXT_2),
     ];
+    if f.channel.is_some() {
+        rows.push(("├ channel.md  (channel guides)".into(), theme::CUE_VISION));
+    }
     for (folder, on) in &f.folders {
         if *on {
             rows.push((format!("├ {}/", folder.path), theme::CUE_CLIP));
@@ -711,16 +772,65 @@ fn preview(f: &NewProjectForm, ui: &mut egui::Ui) {
             }
         });
     ui.add_space(12.0);
-    if let Some(p) = f.preset.and_then(spearfia_vision::preset) {
+    if let Some(p) = f
+        .preset
+        .as_deref()
+        .and_then(|name| f.visions.iter().find(|v| v.name() == name))
+    {
         card(theme::BG_PANEL, theme::BORDER).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(strong("vision.yaml", 12.5));
-            ui.label(mono(format!("extends: {}", p.name), theme::CUE_VISION));
+            ui.label(mono(format!("extends: {}", p.name()), theme::CUE_VISION));
             ui.label(mono(
                 format!("avg_shot_seconds: {}", f.avg_shot),
                 theme::TEXT_2,
             ));
             ui.label(mono(format!("cut_style: {}", f.cut_style), theme::TEXT_2));
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn custom_template_reaches_the_project_request() {
+        let custom = spearfia_core::visions::Vision::parse(r#"{"name":"science","goal":"Explain clearly","weights":{"diagram":0.9},"script_rules":["Use examples"]}"#).unwrap();
+        let mut templates = spearfia_vision::builtin_templates();
+        templates.push(custom.clone());
+        let mut form = NewProjectForm::new(Some(std::env::temp_dir()), None, templates, Vec::new());
+        form.name = "Vision test".into();
+        form.preset = Some("science".into());
+        let request = form.to_spec().unwrap();
+        assert_eq!(request.vision.extends.as_deref(), Some("science"));
+        assert_eq!(request.vision.template, Some(custom.document));
+    }
+    #[test]
+    fn chosen_channel_embeds_saved_guides_in_new_video_request() {
+        let dir = std::env::temp_dir().join(format!(
+            "spearfia-new-channel-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let channel = spearfia_core::channels::create(&dir, "Channel test").unwrap();
+        channel
+            .add_document("analysis.md", "# Analysis\nUse recurring diagrams.")
+            .unwrap();
+        let mut form = NewProjectForm::new(
+            Some(dir.clone()),
+            None,
+            spearfia_vision::builtin_templates(),
+            vec![channel.clone()],
+        );
+        form.name = "Episode one".into();
+        form.choose_channel(&channel.id).unwrap();
+        let request = form.to_spec().unwrap();
+        let brief = request.channel_brief.unwrap();
+        assert!(brief.contains("Channel test") && brief.contains("Use recurring diagrams."));
+        assert!(form.choose_channel("missing").is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

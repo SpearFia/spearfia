@@ -6,6 +6,49 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Agent editing
+
+- Implement project-bound MCP stdio and authenticated local HTTP editing tools for narration and Visual Script, including typed cue operations, revision conflicts, reference binding and bounded undo/redo. Clean agent edits enter desktop undo; production approval remains creator-only.
+- Agents can list project media and add, list and remove media links (`media_list`, `links_list`, `links_add`, `links_remove`). Link saves now start from the saved `links.json` under the project edit lock, so desktop and agent links no longer overwrite each other, and the desktop shows agent links within a second.
+
+### Visual Script
+
+- Add Visual Script after Script: shared Markdown editor, narration-linked visual cues, contextual production details, references, coverage/readiness/review, split/merge/shots and agent exports.
+
+### Channels
+
+- Reusable channel workspaces store editable/importable Markdown for identity, style,
+  lessons, staple assets and production tools. Videos keep portable channel.md snapshots.
+  Saved-script approval guards production handoffs and becomes stale when the script or
+  channel brief changes. Read-only CLI commands expose channel context, drafting briefs
+  and guarded handoffs to agents. Workflow/MCP documentation covers ComfyUI, VoiceStudio,
+  optional editing stages and FilmCraft review, distinguishing implemented features from
+  external integrations and remaining scaffolds.
+
+
+### Media folders
+
+- Copy files from Explorer into a highlighted media folder. Create folders, drag files
+  and folders into the hierarchy, or move folders to the project root. Moves preserve
+  script links and folder roles; imports keep originals and never overwrite existing files.
+
+### Media linking
+
+- Select across script lines and blank breaks, or click/drop onto a section heading.
+  Link checked clips together or keep adding clips to the held selection. Overlapping
+  links have a more transparent highlight. Hover linked words for a second to see clip
+  names and reveal/highlight their files in the media sidebar. Multi-line linking saves
+  all anchors together and keeps the existing links.json format.
+
+
+### Vision catalog
+
+- Catalog → Kind → Vision shows built-in and custom creative briefs. Copy an AI prompt
+  to turn channel-analysis notes and your requirements into validated vision JSON, then
+  paste or import it. Saved templates are available in New Project and catalog ranking;
+  projects embed their rules, references, pacing and weights for portability.
+
+
 ### Added
 
 - Initial repository scaffold.

@@ -12,7 +12,9 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
 - `crates/adapters/filmcraft/`: `spearfia-adapter-filmcraft`. A `resolve/` adapter comes later.
 - `schemas/`: pinned copy of `spearfia-spec` schemas. Don't edit here; see `schemas/README.md`.
 - `examples/sample-project/`: a minimal project folder.
-- `docs/`: `architecture.md`, `filmcraft-recon.md`, `adr/`.
+- `docs/`: `architecture.md`, `filmcraft-recon.md`, `adr/`. Start with `pipeline.md` (the
+  end-to-end production plan, what is built and what is missing), then `channel-workflow.md`,
+  `agents.md` (MCP/HTTP tools) and `visual-script.md`.
 
 ## Commands
 
@@ -24,8 +26,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-All UI, CLI and MCP actions go through the command layer in `spearfia-ops`. Don't add a
-second path that edits project state directly.
+New edit commands go in `spearfia-ops`, the command layer: plans, version checks and one
+undo history shared by the desktop and CLI. Two older paths remain until they move there:
+MCP/HTTP Script and Visual Script edits use `spearfia-core::editing` (revision checks and
+a per-server undo), and media links save through `spearfia-core::links`. Don't add a
+third path that edits project state directly.
 
 ## Naming
 

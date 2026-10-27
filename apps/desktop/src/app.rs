@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 pub enum HomeTab {
     Projects,
     Catalog,
+    Channels,
 }
 
 pub enum View {
@@ -29,6 +30,11 @@ pub struct App {
     pub recents: Recents,
     pub settings: AppSettings,
     pub catalog: Catalog,
+    pub visions: Vec<spearfia_core::visions::Vision>,
+    pub channels: Vec<spearfia_core::channels::Channel>,
+    pub channel_view: screens::channels::ChannelView,
+    pub channel_error: Option<String>,
+    pub vision_errors: Vec<String>,
     pub filmcraft: Option<Install>,
     pub view: View,
     pub home_tab: HomeTab,
@@ -56,6 +62,11 @@ impl App {
             recents,
             settings,
             catalog: Catalog::default(),
+            visions: Vec::new(),
+            channels: Vec::new(),
+            channel_view: screens::channels::ChannelView::default(),
+            channel_error: None,
+            vision_errors: Vec::new(),
             filmcraft: spearfia_adapter_filmcraft::detect(),
             view: View::Home,
             home_tab: HomeTab::Projects,
@@ -67,6 +78,7 @@ impl App {
             now: app_state::now_unix(),
         };
         app.reload_catalog();
+        screens::channels::reload(&mut app);
         if !app.recents.projects.is_empty() {
             app.selected = Some(0);
         }
@@ -82,6 +94,20 @@ impl App {
             .map(|s| LocalSource::new(&s.name, &s.path))
             .collect();
         self.catalog = Catalog::load(&sources);
+        self.visions = spearfia_vision::builtin_templates();
+        self.vision_errors.clear();
+        if let Some(directory) = &self.config_dir {
+            let (custom, errors) = spearfia_core::visions::load(directory);
+            self.vision_errors = errors;
+            for v in custom {
+                if self.visions.iter().any(|p| p.name() == v.name()) {
+                    self.vision_errors
+                        .push(format!("Vision name {} is already in use.", v.name()));
+                } else {
+                    self.visions.push(v);
+                }
+            }
+        }
     }
 
     pub fn save_state(&mut self) {
@@ -114,7 +140,12 @@ impl App {
     }
 
     pub fn start_new_project(&mut self) {
-        let form = NewProjectForm::new(self.settings.projects_dir.clone(), self.series_hint());
+        let form = NewProjectForm::new(
+            self.settings.projects_dir.clone(),
+            self.series_hint(),
+            self.visions.clone(),
+            self.channels.clone(),
+        );
         self.view = View::NewProject(Box::new(form));
     }
 
@@ -133,5 +164,6 @@ impl eframe::App for App {
             View::NewProject(_) => screens::new_project::show(self, ui),
             View::Workspace(_) => screens::workspace::show(self, ui),
         }
+        screens::channels::guard_close(self, ui.ctx());
     }
 }
