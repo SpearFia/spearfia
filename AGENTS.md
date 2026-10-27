@@ -26,8 +26,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-All UI, CLI and MCP actions go through the command layer in `spearfia-ops`. Don't add a
-second path that edits project state directly.
+New edit commands go in `spearfia-ops`, the command layer: plans, version checks and one
+undo history shared by the desktop and CLI. Two older paths remain until they move there:
+MCP/HTTP Script and Visual Script edits use `spearfia-core::editing` (revision checks and
+a per-server undo), and media links save through `spearfia-core::links`. Don't add a
+third path that edits project state directly.
 
 ## Naming
 

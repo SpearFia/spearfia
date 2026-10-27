@@ -4,10 +4,21 @@ A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
 
 ## One command layer
 
-The UI, the CLI, the MCP server and the local API all call the same typed operations in
-`spearfia-core`. Script and Visual Script agent edits use revision-guarded core commands with bounded
-server-session undo/redo. Clean external changes enter the desktop document undo history.
-Different server processes do not share a persistent global undo log.
+The goal is one layer: `spearfia-ops`. A command computes a plan (new text, summary, base
+version); applying it refuses stale writes and records it in `sync/history.jsonl`, so undo
+works the same from the desktop, the CLI or an agent. Transitions are the first commands
+there.
+
+Not there yet:
+
+- MCP/HTTP Script and Visual Script edits use `spearfia-core::editing`: revision-guarded
+  commands with bounded per-server undo/redo. Clean external changes enter the desktop
+  document undo history, but this undo is separate from the `ops` history and is lost when
+  the server exits.
+- Media links save through `spearfia-core::links` under the project edit lock, outside
+  any undo history.
+
+New commands go in `spearfia-ops`. Moving the two paths above onto it is planned.
 
 ## Intent here, realization in the editor
 
