@@ -12,6 +12,7 @@ You plan the visuals for the current Spear Fia project (MCP server "spearfia").
    "Generated artwork" for graphics), and details:
    - "Subject": a broad pool at the character or game level ("The Witcher 3 cinematics
      or gameplay of Geralt"). No shot lists, no specific scenes.
+     Every cue in a pool uses the identical Subject string; media search groups by it.
    - "match": subject (default) or mood. Use exact only for show moments, where the
      sentence describes a concrete event the viewer should see (about 5-10% of cues);
      only those get a specific VISUAL line.
