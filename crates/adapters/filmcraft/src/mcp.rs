@@ -27,7 +27,13 @@ fn fail(msg: impl std::fmt::Display) -> CoreError {
 impl Client {
     /// Start `cli mcp` headless (an empty in-memory project) and initialize the session.
     pub fn start(cli: &Path) -> Result<Self> {
-        let mut child = Command::new(cli)
+        let mut command = Command::new(cli);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut child = command
             .arg("mcp")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

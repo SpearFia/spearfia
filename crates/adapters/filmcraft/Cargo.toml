@@ -11,4 +11,5 @@ repository.workspace = true
 spearfia-core.workspace = true
 spearfia-script.workspace = true
 spearfia-sync.workspace = true
+spearfia-analysis.workspace = true
 serde_json.workspace = true

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/production-jobs-state/v1.json",
+  "title": "Spear Fia production-jobs-state",
+  "type": "object",
+  "properties": {
+    "spec_version": {
+      "const": 1
+    },
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "waiting",
+              "submitting",
+              "running",
+              "complete",
+              "failed",
+              "uncertain",
+              "cancelled",
+              "needs-input"
+            ]
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "started": {
+            "type": "number"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "hash": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "hash"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "link_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reply": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "state",
+          "provider_id",
+          "message",
+          "attempts",
+          "seed",
+          "started",
+          "outputs",
+          "link_ids",
+          "reply"
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "spec_version",
+    "jobs"
+  ],
+  "additionalProperties": true
+}

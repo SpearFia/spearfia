@@ -230,3 +230,146 @@ fn refuses_to_push_an_unapproved_script() {
     assert!(!sync.join("plans").exists() && !sync.join("snapshots").exists());
     let _ = std::fs::remove_dir_all(&p.root);
 }
+
+#[test]
+fn native_captions_visual_treatments_and_mix_survive_save() {
+    use spearfia_analysis::{Alignment, MeasuredWord, hash_file, script_words};
+    use spearfia_core::{project::write_json, visuals};
+    let Some(cli) = detect().and_then(|i| i.cli) else {
+        eprintln!("skipped: no FilmCraft CLI installed");
+        return;
+    };
+    let p = project("execution", true);
+    // Fixture measurements have deliberately uneven pauses; they test frame mapping,
+    // not speech recognition. No generation service is contacted.
+    for (file, lines, duration, spacing) in [
+        ("gen/one.wav", vec![1, 2], 2.0, 0.15),
+        ("gen/two.wav", vec![4], 1.0, 0.2),
+    ] {
+        let expected: Vec<_> = script_words(SCRIPT)
+            .into_iter()
+            .filter(|w| lines.contains(&w.line))
+            .collect();
+        let measured: Vec<_> = expected
+            .iter()
+            .enumerate()
+            .map(|(i, w)| MeasuredWord {
+                word: w.text.clone(),
+                start: 0.05 + i as f64 * spacing,
+                end: 0.15 + i as f64 * spacing,
+            })
+            .collect();
+        let alignment = Alignment::measured(
+            SCRIPT,
+            file.into(),
+            hash_file(&p.resolve(file)).unwrap(),
+            &lines,
+            &measured,
+            duration,
+            Timebase::FPS_30,
+        )
+        .unwrap();
+        write_json(
+            &p.root.join(format!("analysis/{}.alignment.json", lines[0])),
+            &alignment,
+        )
+        .unwrap();
+    }
+    let mut style = spearfia_sync::render::Style::default();
+    style.captions.enabled = true;
+    style.captions.mode = "word".into();
+    style.mix.enabled = true;
+    write_json(&p.root.join("production/style.json"), &style).unwrap();
+    let start = SCRIPT.find("You'd").unwrap();
+    let end = SCRIPT.find("## Chapter").unwrap();
+    let (source, id) = visuals::Plan::parse(visuals::EMPTY)
+        .unwrap()
+        .add(
+            "Opening graphic",
+            visuals::Anchor::new(SCRIPT, start..end).unwrap(),
+        )
+        .unwrap();
+    let plan = visuals::Plan::parse(&source).unwrap();
+    let mut meta = plan.cue(&id).unwrap().meta.clone();
+    meta.details.insert("execution".into(),serde_json::json!({"layers":[{"kind":"text","text":"Measured timing","position":[0.5,0.25],"font_size":56},{"kind":"shape","shape":"rectangle","position":[0.5,0.3],"size":[0.1,0.02],"color":"#ffcc00","track":5},{"kind":"media","path":"gen/still.bmp","position":[0.85,0.2],"size":[0.08,0.08],"opacity":65,"track":6}],"camera":{"from":100,"to":110}}).to_string());
+    let source = plan.update(&meta).unwrap();
+    p.write_visuals(&p.read_visuals().unwrap(), &source)
+        .unwrap();
+    let mut links = Links::load(&p).unwrap();
+    links
+        .links
+        .push(link("k5", "You'd", 1, "gen/one.wav", MediaRole::Music));
+    links
+        .links
+        .push(link("k6", "think", 1, "gen/two.wav", MediaRole::Sfx));
+    links.save(&p).unwrap();
+    let pushed = push(&p, &cli).unwrap();
+    let out = Command::new(&cli)
+        .arg("--project")
+        .arg(&pushed.review)
+        .args(["inspect", "sequence"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let seq: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        named(&seq, "{#caption-0-0}").is_some(),
+        "No native caption: {seq}"
+    );
+    assert!(
+        named(&seq, &format!("{{#{id}-layer-0}}")).is_some(),
+        "No visual layer: {seq}"
+    );
+    let voice = named(&seq, "{#k1}").unwrap();
+    assert_eq!(voice["gainDb"], 0.0);
+    let music = named(&seq, "{#k5}").unwrap();
+    assert_eq!(music["gainDb"], -20.0);
+    let sfx = named(&seq, "{#k6}").unwrap();
+    assert_eq!(sfx["gainDb"], -10.0);
+    assert!(
+        music["effects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["effect"] == "volume"
+                && e["params"]["level"]["keyframes"].as_u64().unwrap_or(0) >= 4)
+    );
+    let mixer = Command::new(&cli)
+        .arg("--project")
+        .arg(&pushed.review)
+        .args(["exec", "mixer.inspect"])
+        .output()
+        .unwrap();
+    assert!(mixer.status.success());
+    let mixer: Value = serde_json::from_slice(&mixer.stdout).unwrap();
+    let bed = mixer["strips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["ref"] == "A2")
+        .unwrap();
+    assert_eq!(bed["mode"], "Read");
+    assert!(
+        bed["lanes"]["volume"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|key| key[1] == -8.0)
+    );
+    let execution: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            p.root
+                .join(format!("sync/render-plans/{}.json", pushed.plan_id)),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(execution["captions"].as_array().unwrap().len(), 15);
+    assert!(!execution["effects"].as_array().unwrap().is_empty());
+    // Leave the synthetic review available for visual QA in the test temp folder.
+    eprintln!("native execution review: {}", pushed.review.display());
+}

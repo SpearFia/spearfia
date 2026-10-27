@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/visual-execution/v1.json",
+  "title": "Spear Fia visual-execution",
+  "type": "object",
+  "properties": {
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "text",
+              "shape",
+              "media"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "track": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 16
+          },
+          "position": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "size": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "font": {
+            "type": "string"
+          },
+          "font_size": {
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          },
+          "shape": {
+            "enum": [
+              "rectangle",
+              "ellipse"
+            ]
+          },
+          "opacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "effect": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object"
+          },
+          "keyframes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "param": {
+                  "type": "string"
+                },
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "value": {}
+              },
+              "required": [
+                "param",
+                "frame",
+                "value"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "effect"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "camera": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "number"
+        },
+        "to": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

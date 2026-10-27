@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spearfia.dev/schemas/word-alignment/v1.json",
+  "title": "Spear Fia word-alignment",
+  "type": "object",
+  "properties": {
+    "spec_version": {
+      "const": 1
+    },
+    "script_revision": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "hash"
+      ],
+      "additionalProperties": true
+    },
+    "analyzer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": true
+    },
+    "timebase": {
+      "type": "object",
+      "properties": {
+        "num": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "den": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "num",
+        "den"
+      ],
+      "additionalProperties": true
+    },
+    "duration_frames": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "words": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "line": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "word": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          },
+          "start_frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_frame": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "line",
+          "word",
+          "text",
+          "start_frame",
+          "end_frame"
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "spec_version",
+    "script_revision",
+    "source",
+    "analyzer",
+    "timebase",
+    "duration_frames",
+    "words"
+  ],
+  "additionalProperties": true
+}

@@ -8,8 +8,10 @@ A summary of the design. Decisions that change it get an ADR in `docs/adr/`.
 `spearfia pipeline` call `spearfia-ops::production` for assignments, checkpoints, creator
 gates, output verification, cancellation and recovery. It attaches project-specific MCP
 tools without rewriting global agent settings. Agent undo cannot change creator stage
-assignments. This coordinator does not implement model-provider APIs, media analyzers,
-caption rendering, editing recipes or FilmCraft pull. See [production.md](production.md).
+assignments. The artifact runner adds service adapters and durable jobs; `spearfia-analysis` validates
+measured narration alignment, and `spearfia-sync` compiles executable captions, graphics,
+native recipes and mix automation. Direct model-provider APIs and FilmCraft pull remain
+separate work. See [production.md](production.md) and [execution](production-execution.md).
 
 ## One command layer
 

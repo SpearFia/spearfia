@@ -30,6 +30,11 @@ pub struct Stage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Check {
+    Jobs {
+        stage: String,
+    },
+    Alignment,
+    Captions,
     File {
         path: String,
     },
@@ -182,8 +187,13 @@ pub fn defaults() -> Pipeline {
             Provider::Codex,
             true,
             true,
-            "Use the voiceover skill and configured VoiceStudio voice. Generate only the first section, verify the audio, link it to narration with links_add, and stop so the creator can listen.",
-            vec![links(Voiceover, false)],
+            "Use the voiceover skill. Read jobs_status and the saved channel voice settings. Use voiceover_plan with an explicit recorded VoiceStudio profile, then jobs_run with stage=voiceover-sample. Poll jobs_status until running=false, then inspect every state and registered output. Ask if the profile is missing. Stop for the creator to listen; never run later jobs across this review gate.",
+            vec![
+                links(Voiceover, false),
+                Check::Jobs {
+                    stage: "voiceover-sample".into(),
+                },
+            ],
         ),
         (
             "voiceover",
@@ -191,8 +201,26 @@ pub fn defaults() -> Pipeline {
             Provider::Codex,
             true,
             false,
-            "Use the voiceover skill. Reuse the accepted sample. Generate, verify and link remaining sections. Every spoken line must be covered by recorded narration. Keep script unchanged.",
+            "Use the voiceover skill. Reuse the verified accepted sample and jobs_run with stage=voiceover. Poll jobs_status until running=false and verify the selected stage completed. Resume recorded takes; never submit an uncertain generation again. Every spoken line must have narration or recorded live audio. If only one section exists, report that no remaining job is needed. Keep the approved script unchanged.",
             vec![links(Voiceover, true)],
+        ),
+        (
+            "word-alignment",
+            "Measured narration timing",
+            Provider::Codex,
+            true,
+            false,
+            "Read jobs_status, then alignment_plan for the registered narration using the local VoiceStudio URL. Run jobs_run stage=word-alignment and poll jobs_status until running=false. Strictly match measured words to the approved script; correct missing/reordered speech or request creator input. Never estimate word timestamps or change the approved narration.",
+            vec![Check::Alignment],
+        ),
+        (
+            "captions",
+            "Animated captions",
+            Provider::Codex,
+            true,
+            true,
+            "Read the channel executable style and validate it. If no caption profile is recorded, propose grouping, font, position, emphasis and animation settings for creator review. Save production/style.json through style_save with jobs_status.style_revision. Use captions_build and inspect the grouping, line breaks and active-word ranges. Do not fabricate timing. Stop for creator review of the caption plan.",
+            vec![Check::Captions],
         ),
         (
             "media-search",
@@ -201,7 +229,20 @@ pub fn defaults() -> Pipeline {
             true,
             false,
             "Use the media-search skill and Visual Script. Reuse the shared library first. Search, inspect and link footage to narration with links_add. Record sources, filled cues and unresolved coverage in production/media-report.md. If required cues remain unfilled, return blocked or needs_input.",
-            vec![links(BRoll, false), file("production/media-report.md")],
+            vec![
+                links(BRoll, false),
+                Check::Visuals,
+                file("production/media-report.md"),
+            ],
+        ),
+        (
+            "visual-production",
+            "Graphics and visual treatments",
+            Provider::Codex,
+            true,
+            false,
+            "Realize the Visual Script after media search. Plan generated graphics/video through jobs_plan stage=visual-production and run/resume that stage with jobs_run. Add execution JSON in each cue details for text, shapes, media overlays, camera moves and native FilmCraft effects/recipes. Poll jobs_status until running=false and verify every planned output. Resolve every :look to a saved executable channel recipe. Unsupported capabilities require input rather than a claimed completion. Write production/visual-production.md with cue-to-output links and unresolved work.",
+            vec![Check::Visuals, file("production/visual-production.md")],
         ),
         (
             "audio-sample",
@@ -209,7 +250,7 @@ pub fn defaults() -> Pipeline {
             Provider::Codex,
             true,
             true,
-            "Use the audio-gen skill and channel sound rules. Reuse the library first. Produce and link one music bed and one SFX, then stop so the creator can listen. Write the proposed score in production/audio-plan.md.",
+            "Use the audio-gen skill and channel sound rules. Reuse verified library audio first. Plan any new ComfyUI API workflows through jobs_plan with stage=audio-sample, explicit output node/index, media role and narration anchors; run only that stage with jobs_run. Poll jobs_status until running=false; verify all selected jobs before claiming completion. Submit no filename-only cache hits. Produce one music and SFX sample, write production/audio-plan.md including levels, fades and ducking in the execution profile, and stop for creator listening.",
             vec![
                 links(Music, false),
                 links(Sfx, false),
@@ -222,8 +263,12 @@ pub fn defaults() -> Pipeline {
             Provider::Codex,
             true,
             false,
-            "Use the audio-gen skill. Follow the accepted audio plan, reuse accepted samples, and generate/verify/link remaining music and SFX. Report unscored sections explicitly; keep script unchanged.",
-            vec![links(Music, false), links(Sfx, false)],
+            "Use the audio-gen skill and accepted score. Plan new generation with jobs_plan stage=audio and execute/resume only that stage with jobs_run. Reuse verified samples and library assets. Poll jobs_status until running=false and verify all selected jobs. Save channel-specific dB levels, fades, attack/release and ducking to the executable style. Report unscored sections explicitly; keep the approved script unchanged.",
+            vec![
+                links(Music, false),
+                links(Sfx, false),
+                file("production/audio-plan.md"),
+            ],
         ),
         (
             "assembly",

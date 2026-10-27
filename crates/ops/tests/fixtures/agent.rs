@@ -13,6 +13,7 @@ fn main() {
     if !question && !prompt.contains("FAKE_MISSING") {
         std::fs::create_dir_all("production").unwrap();
         std::fs::write("production/out.md", "verified fixture output\n").unwrap();
+        if prompt.contains("FAKE_REVISED"){std::fs::write("production/out.md","verified revised output\n").unwrap();}
     }
     if prompt.contains("FAKE_FAIL") { eprintln!("fixture failure"); std::process::exit(3); }
     if let Some(at) = args.iter().position(|a| a == "--output-last-message") {

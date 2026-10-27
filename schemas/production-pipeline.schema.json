@@ -83,7 +83,10 @@
                     "script",
                     "visuals",
                     "links",
-                    "filmcraft"
+                    "filmcraft",
+                    "jobs",
+                    "alignment",
+                    "captions"
                   ]
                 },
                 "path": {
@@ -108,6 +111,10 @@
                 },
                 "coverage": {
                   "type": "boolean"
+                },
+                "stage": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -154,6 +161,25 @@
                       "role",
                       "minimum",
                       "coverage"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "jobs"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "stage": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stage"
                     ]
                   }
                 }

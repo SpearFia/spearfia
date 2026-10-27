@@ -35,7 +35,7 @@ fn cli_initialization_is_non_destructive_and_uses_shared_history() {
         String::from_utf8_lossy(&init.stderr)
     );
     let config: serde_json::Value = serde_json::from_slice(&init.stdout).unwrap();
-    assert_eq!(config["stages"].as_array().unwrap().len(), 11);
+    assert_eq!(config["stages"].as_array().unwrap().len(), 14);
     let saved = fs::read(root.join("production/pipeline.json")).unwrap();
     assert!(!invoke(&["pipeline", "init"]).status.success());
     assert_eq!(

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Project-bound CLI production coordination, shared by the desktop and CLI.
 mod config;
+pub mod jobs;
+pub mod planning;
 mod runner;
+pub mod style;
 mod verify;
 pub use config::{CONFIG, Check, Pipeline, Stage, defaults, load_pipeline, save_pipeline};
 pub use runner::{Action, Run, State, Step, execute, is_running, load_run, request_stop};

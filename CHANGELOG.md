@@ -6,6 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Production execution
+
+- Add durable artifact DAG jobs with fingerprints, saved service identities, cancellation,
+  reconciliation, per-job retries, verified download reuse and media registration. Add
+  VoiceStudio/ComfyUI/alignment adapters, CLI planning and asynchronous MCP/HTTP tools.
+- Add strict measured word alignment, channel-specific animated native captions, scoped
+  graphics/overlays/effects/recipes/camera moves, and FilmCraft gains/fades/ducking.
+- Extend Production with artifact status and creator-only uncertainty resolution. Add
+  native FilmCraft save/reopen tests and local service-contract/recovery tests.
+
 ### Production coordination
 
 - Add the Production desktop page and `spearfia pipeline` commands for configured Claude
@@ -40,7 +50,6 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   optional editing stages and FilmCraft review, distinguishing implemented features from
   external integrations and remaining scaffolds.
 
-
 ### Media folders
 
 - Copy files from Explorer into a highlighted media folder. Create folders, drag files
@@ -55,14 +64,12 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   names and reveal/highlight their files in the media sidebar. Multi-line linking saves
   all anchors together and keeps the existing links.json format.
 
-
 ### Vision catalog
 
 - Catalog → Kind → Vision shows built-in and custom creative briefs. Copy an AI prompt
   to turn channel-analysis notes and your requirements into validated vision JSON, then
   paste or import it. Saved templates are available in New Project and catalog ranking;
   projects embed their rules, references, pacing and weights for portability.
-
 
 ### Added
 

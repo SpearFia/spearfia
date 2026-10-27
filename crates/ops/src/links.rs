@@ -66,6 +66,28 @@ pub fn remove(project: &Project, id: &str, origin: Origin) -> Result<Links> {
     Ok(links)
 }
 
+/// Replace only this job's previous links and register its verified outputs together.
+pub fn replace(
+    project: &Project,
+    old: &[String],
+    requests: Vec<Link>,
+    origin: Origin,
+) -> Result<(Links, Vec<String>)> {
+    let (before, mut links) = load(project)?;
+    for id in old {
+        links.remove(id);
+    }
+    let ids = links.add_requests(requests)?;
+    save(
+        project,
+        before,
+        &links,
+        "Register verified production artifacts".into(),
+        origin,
+    )?;
+    Ok((links, ids))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

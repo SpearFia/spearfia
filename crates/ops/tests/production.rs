@@ -251,6 +251,30 @@ fn pipeline_changes_require_a_new_run_and_stale_config_saves_fail() {
         .is_err()
     );
 }
+
+#[test]
+fn later_verified_document_refinement_does_not_restart_earlier_stages() {
+    let p = project();
+    configure(
+        &p,
+        vec![
+            stage("draft", Provider::Codex, false, false, "FAKE_SUCCESS"),
+            stage("refine", Provider::Codex, false, true, "FAKE_REVISED"),
+        ],
+    );
+    let review = start(&p);
+    assert_eq!(review.state, State::Review);
+    assert_eq!(review.steps[0].artifacts, review.steps[1].artifacts);
+    let complete = resume(
+        &p,
+        Action {
+            accept_review: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(complete.state, State::Complete);
+    assert!(complete.steps.iter().all(|s| s.attempts == 1));
+}
 #[test]
 fn interrupted_running_state_never_silently_restarts() {
     let p = project();

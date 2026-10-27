@@ -11,8 +11,10 @@ version agents should follow; update it when the plan changes.
 
 The [production coordinator](production.md) can now run these stages through configured
 Claude Code/Codex CLIs, retain checkpoints/replies/logs, verify outputs and stop at creator
-gates. It relies on the installed skills and external production tools below; caption
-generation, editing recipes and FilmCraft pull remain separate work.
+gates. Its [artifact runner](production-execution.md) submits and reconciles VoiceStudio/
+ComfyUI work, validates measured word timing, and executes captions, visual treatments,
+native FilmCraft recipes and audio mixing. It relies on installed skills and services;
+FilmCraft pull and unsupported plugin capabilities remain separate work.
 
 ## Stages
 
@@ -24,10 +26,10 @@ generation, editing recipes and FilmCraft pull remain separate work.
 | 4 | Visual Script | `visuals/visuals.md` cues tied to narration | Visual Script editor; MCP `visuals_edit`; exports | Built |
 | 5 | Thumbnail concept | A text description, no image yet | `packaging.md` | Guides only |
 | 6 | Voiceover | One audio file per script section, linked to its words | `voiceover` skill (VoiceStudio API), `spearfia sections`, `links_add` | Built (not yet run on a real episode) |
-| 7 | Media search | Footage and images per cue, linked to words | MCP `links_add`; Visual Script references | Linking built; search skill missing |
+| 7 | Media search | Footage and images per cue, linked to words | MCP `links_add`; Visual Script references | Skill and persistent job contract built |
 | 8 | Assembly | A FilmCraft review timeline | Sync stage, MCP `timeline_push`, `spearfia push filmcraft` | One-way push built; pull missing |
 | 9 | Music and SFX | Beds and effects on their own tracks | `audio-gen` skill (ComfyUI, Stable Audio 3); `music`/`sfx` folder roles → A2/A3 | Built (generation tested) |
-| 9b | Channel-style edit | Transitions, captions, camera moves | Catalog recipes and looks (planned) | Missing |
+| 9b | Channel-style edit | Transitions, captions, camera moves | Measured alignment, executable style/visual metadata, native FilmCraft recipes | Built; unsupported plugins require input |
 | 10 | Thumbnail and description | Finished thumbnail and description | None (PhotoCraft or ComfyUI) | External |
 | 11 | Review and lessons | Creator review; dated notes in `lessons.md` | Channel guides | Manual |
 
@@ -132,10 +134,11 @@ TV clips under narration and animated captions.
 | Assembly and style edit | Codex (Sol 6.1) with FilmCraft MCP |
 | Thumbnail and description | Sonnet 5.5 with PhotoCraft and ComfyUI |
 
-## What's missing, in order
+## Remaining production work
 
-1. Animated captions from the script and VO timing.
-2. FilmCraft pull: edits in the review project mapped back to the script by cue ID.
-3. Editing style as catalog recipes.
-4. A way to update this process over time, possibly an outside reviewer agent that checks
-   each stage's output against the channel DNA.
+The runner, measured animated captions and native visual/audio execution are implemented;
+see [production execution](production-execution.md) for their scope and verification.
+A real channel pilot still needs installed model/service settings, reviewed channel style,
+verified source coverage and editorial/listening review. Unsupported plugin/analysis
+capabilities stop for input. FilmCraft pull, publishing and a separate editorial reviewer
+remain future work.

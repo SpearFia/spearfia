@@ -1,6 +1,7 @@
-//! `spearfia-analysis`: Analysis sidecars: read and write per-media analysis files (frames + rational timebase, IDs, analyzer version) and run analyzers.
-//!
-//! Skeleton only: no features are implemented yet.
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Measured word alignment, source fingerprints and timeline word positions.
+mod alignment;
+pub use alignment::*;
 
 /// The crate name, used in logs and analyzer/version stamps.
 pub const NAME: &str = env!("CARGO_PKG_NAME");

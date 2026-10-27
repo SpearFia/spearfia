@@ -23,6 +23,8 @@ pub struct Production {
     worker: Option<Receiver<Result<Run, String>>>,
     active_project: Option<Project>,
     checked: f64,
+    jobs: Option<production::jobs::Ledger>,
+    job_worker: Option<Receiver<Result<production::jobs::Ledger, String>>>,
 }
 
 impl Drop for Production {
@@ -31,6 +33,11 @@ impl Drop for Production {
             && let Some(project) = &self.active_project
         {
             let _ = production::request_stop(project);
+        }
+        if self.job_worker.is_some()
+            && let Some(project) = &self.active_project
+        {
+            let _ = production::jobs::cancel(project);
         }
     }
 }
@@ -57,12 +64,35 @@ impl Production {
         self.read_run(project);
     }
     fn read_run(&mut self, project: &Project) {
+        match production::jobs::ledger(project) {
+            Ok(jobs) => self.jobs = Some(jobs),
+            Err(e) => self.error = e.to_string(),
+        }
         match production::load_run(project) {
             Ok(run) => self.run = run,
             Err(e) => self.error = e.to_string(),
         }
     }
     pub fn show(&mut self, ui: &mut egui::Ui, project: &Project, source: &str) {
+        if let Some(worker) = &self.job_worker {
+            match worker.try_recv() {
+                Ok(result) => {
+                    self.job_worker = None;
+                    self.active_project = None;
+                    match result {
+                        Ok(jobs) => self.jobs = Some(jobs),
+                        Err(e) => self.error = e,
+                    }
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.job_worker = None;
+                    self.active_project = None;
+                    self.error =
+                        "Artifact worker stopped; inspect saved jobs before resuming.".into();
+                }
+                Err(TryRecvError::Empty) => {}
+            }
+        }
         if self.config.is_none() && self.error.is_empty() {
             self.reload(project);
         }
@@ -93,6 +123,8 @@ impl Production {
             .request_repaint_after(std::time::Duration::from_millis(500));
         let mut action = None;
         let mut reload = false;
+        let mut run_jobs = None;
+        let mut resolve_job = None;
         egui::CentralPanel::default().frame(widgets::panel(theme::BG_APP).inner_margin(24)).show(ui, |ui| {
             ui.heading("Production");
             ui.label("Assign agents to stages, review their work, and continue from the saved checkpoint.");
@@ -107,7 +139,7 @@ impl Production {
                 ui.label(format!("{:?}: {}", run.state, run.message));
             }
             if !self.error.is_empty() { ui.colored_label(theme::DANGER, &self.error); }
-            let busy=self.worker.is_some() || production::is_running(project).unwrap_or(true);
+            let busy=self.worker.is_some() || self.job_worker.is_some() || production::is_running(project).unwrap_or(true)||production::jobs::is_running(project).unwrap_or(true);
             ui.horizontal(|ui| {
                 if ui.add_enabled(!busy, egui::Button::new("Reload assignments")).clicked() { reload=true; }
                 if ui.add_enabled(!busy && self.dirty && self.config.is_some(), egui::Button::new("Save assignments")).clicked()
@@ -135,6 +167,26 @@ impl Production {
                 }
             }
             ui.separator();
+            ui.collapsing("Artifact jobs",|ui|{
+                ui.label("Saved generation, search, and analysis work. Completed files are verified before reuse.");
+                ui.horizontal(|ui|{
+                    if ui.add_enabled(!busy&&approved,egui::Button::new("Run ready jobs")).clicked(){run_jobs=Some(false);}
+                    if ui.add_enabled(!busy&&approved,egui::Button::new("Retry failed jobs")).clicked(){run_jobs=Some(true);}
+                    if ui.button("Cancel artifact work").clicked()&&let Err(e)=production::jobs::cancel(project){self.error=e.to_string();}
+                });
+                if let Some(jobs)=&self.jobs{
+                    let complete=jobs.jobs.iter().filter(|j|j.state==production::jobs::Status::Complete).count();
+                    ui.label(format!("{complete} of {} jobs complete",jobs.jobs.len()));
+                    for job in &jobs.jobs{
+                        ui.label(format!("{} · {:?} · {}",job.id,job.state,job.message));
+                        if !job.provider_id.is_empty(){ui.small(format!("Service ID: {}",job.provider_id));}
+                        if job.state==production::jobs::Status::Uncertain&&!busy{
+                            ui.label("Inspect the service history before authorizing another submission.");
+                            if ui.small_button(format!("I checked the service; allow retry for {}",job.id)).clicked(){resolve_job=Some(job.id.clone());}
+                        }
+                    }
+                }
+            });
             egui::ScrollArea::vertical().id_salt("production-editor").show(ui, |ui| {
                 let Some(config)=&mut self.config else { return };
                 let mut move_stage = 0i32;
@@ -204,8 +256,52 @@ impl Production {
         if reload {
             self.reload(project);
         }
+        if let Some(id) = resolve_job
+            && let Err(e) = production::jobs::retry_uncertain(project, &id)
+        {
+            self.error = e.to_string();
+        }
+        if let Some(retry) = run_jobs {
+            self.start_jobs(project, retry, ui.ctx().clone());
+        }
         if let Some(action) = action {
             self.start(project, action, ui.ctx().clone());
+        }
+    }
+    fn start_jobs(&mut self, project: &Project, retry: bool, ctx: egui::Context) {
+        let result = (|| {
+            let project = project.clone();
+            let active = project.clone();
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let cli = exe
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join(format!("spearfia{}", std::env::consts::EXE_SUFFIX));
+            let stage = self
+                .run
+                .as_ref()
+                .and_then(|run| run.steps.iter().find(|s| s.state != State::Complete))
+                .map(|s| s.id.clone());
+            let (tx, rx) = std::sync::mpsc::channel();
+            let reply = self.reply.clone();
+            std::thread::Builder::new()
+                .name("spearfia-artifacts".into())
+                .spawn(move || {
+                    let result = std::panic::catch_unwind(|| {
+                        production::jobs::run_stage(&project, &cli, retry, &reply, stage.as_deref())
+                    })
+                    .map_err(|_| "Artifact worker failed; inspect its checkpoint.".to_owned())
+                    .and_then(|r| r.map_err(|e| e.to_string()));
+                    let _ = tx.send(result);
+                    ctx.request_repaint();
+                })
+                .map_err(|e| e.to_string())?;
+            self.job_worker = Some(rx);
+            self.active_project = Some(active);
+            Ok::<_, String>(())
+        })();
+        if let Err(e) = result {
+            self.error = e;
         }
     }
     fn start(&mut self, project: &Project, action: Action, ctx: egui::Context) {
@@ -286,7 +382,7 @@ mod tests {
         output.textures_delta.clear(); // Headless verification intentionally has no GPU renderer.
         assert!(!output.shapes.is_empty());
         assert!(view.error.is_empty());
-        assert_eq!(view.config.as_ref().unwrap().stages.len(), 11);
+        assert_eq!(view.config.as_ref().unwrap().stages.len(), 14);
         assert!(view.worker.is_none());
         assert!(production::load_run(&project).unwrap().is_none());
     }

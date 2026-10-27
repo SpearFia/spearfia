@@ -299,7 +299,7 @@ pub fn execute(project: &Project, cli: &Path, action: Action) -> Result<Run> {
         run.state = State::Running;
         run.message = step.message.clone();
         save(project, &run)?;
-        let result = run_agent(project, stage, cli, &prompt, &run.steps[index].log);
+        let result = run_agent(project, stage, cli, &prompt, &run.steps[index].log, false);
         let (state, message, mut artifacts) = match result {
             Ok(report) => match report.status {
                 ReportStatus::NeedsInput => (
@@ -372,6 +372,18 @@ pub fn execute(project: &Project, cli: &Path, action: Action) -> Result<Run> {
                 super::verify::current_stamp(project, "channel.md")?,
             );
         }
+        // A later verified stage may intentionally refine a shared document (for
+        // example, add executable treatments to the planned Visual Script). Its
+        // new proof supersedes the earlier version without making that stage stale.
+        if matches!(state, State::Complete | State::Review) {
+            for prior in &mut run.steps[..index] {
+                for (path, signature) in &mut prior.artifacts {
+                    if let Some(current) = artifacts.get(path) {
+                        signature.clone_from(current);
+                    }
+                }
+            }
+        }
         run.steps[index].state = state;
         run.steps[index].message = message.clone();
         run.steps[index].artifacts = artifacts;
@@ -417,12 +429,13 @@ fn prompt(project: &Project, stage: &Stage, run: &Run) -> Result<String> {
     }
     Ok(prompt)
 }
-fn run_agent(
+pub(super) fn run_agent(
     project: &Project,
     stage: &Stage,
     cli: &Path,
     prompt: &str,
     log: &str,
+    artifact: bool,
 ) -> Result<Report> {
     let directory = project.root.join(log);
     fs::create_dir_all(&directory).map_err(|e| invalid(e.to_string()))?;
@@ -464,7 +477,9 @@ fn run_agent(
     let started = Instant::now();
     let mut last_check = Instant::now() - Duration::from_secs(2);
     let result = loop {
-        if project.root.join(STOP).exists() {
+        if project.root.join(STOP).exists()
+            || (artifact && project.root.join("sync/production/jobs-cancel").exists())
+        {
             return Err(invalid(
                 "Production stopped. Inspect existing jobs before retrying; external generator jobs may still be running.",
             ));

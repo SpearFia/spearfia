@@ -125,7 +125,7 @@ fn real_mcp_roundtrip_edits_every_visual_operation_and_checks_conflicts() {
     );
     client.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
     let listed = client.request("tools/list", json!({}));
-    assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 15);
+    assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 23);
     let context = client.tool("project_context", json!({}));
     let original_approval = context["approval"].clone();
     let s = client.tool("document_read", json!({"document":"script"}));
@@ -266,7 +266,7 @@ fn real_http_api_authenticates_and_edits_without_mcp_handshake() {
         .unwrap();
     assert_eq!(http(port, "wrong", "/v1/tools", None).0, 401);
     let (_, tools) = http(port, token, "/v1/tools", None);
-    assert_eq!(tools["tools"].as_array().unwrap().len(), 15);
+    assert_eq!(tools["tools"].as_array().unwrap().len(), 23);
     let (_, read) = http(
         port,
         token,

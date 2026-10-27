@@ -68,6 +68,41 @@ fn stamp(path: &Path) -> Result<String> {
     Ok(format!("file:{}:{modified}", meta.len()))
 }
 pub(crate) fn current_stamp(project: &Project, path: &str) -> Result<String> {
+    if let Some(stage) = path.strip_prefix("@jobs:") {
+        super::jobs::verified_stage(project, stage)?;
+        let plan = super::jobs::load_plan(project)?.0;
+        let ledger = super::jobs::ledger(project)?;
+        let selected: Vec<_> = ledger
+            .jobs
+            .iter()
+            .filter(|r| plan.jobs.iter().any(|j| j.stage == stage && j.id == r.id))
+            .map(|r| (&r.id, &r.key, &r.outputs, &r.link_ids))
+            .collect();
+        return Ok(crate::version(
+            &serde_json::to_string(&selected).map_err(|e| invalid(e.to_string()))?,
+        ));
+    }
+    if ["@alignment", "@captions"].contains(&path) {
+        let words = spearfia_analysis::timeline_words(
+            project,
+            &Links::load(project)?,
+            project.file.settings.timebase,
+        )?;
+        let source = project.read_script()?;
+        if spearfia_analysis::script_words(&source)
+            .iter()
+            .any(|w| !words.iter().any(|a| a.line == w.line && a.word == w.word))
+        {
+            return Err(invalid("Narration alignment is no longer complete."));
+        }
+        let mut value =
+            serde_json::json!({"words":words,"sources":spearfia_analysis::current(project)?});
+        if path == "@captions" {
+            value["captions"] = serde_json::to_value(super::style::load_style(project)?.captions)
+                .map_err(|e| invalid(e.to_string()))?;
+        }
+        return Ok(crate::version(&value.to_string()));
+    }
     if let Some(id) = path.strip_prefix("@link:") {
         let links = Links::load(project)?;
         let link = links
@@ -100,6 +135,40 @@ pub fn verify(project: &Project, stage: &Stage) -> Result<BTreeMap<String, Strin
     let mut artifacts = BTreeMap::new();
     for check in &stage.checks {
         match check {
+            Check::Jobs { stage } => {
+                super::jobs::verified_stage(project, stage)?;
+                remember(project, &format!("@jobs:{stage}"), &mut artifacts)?;
+            }
+            Check::Alignment | Check::Captions => {
+                let links = Links::load(project)?;
+                let words = spearfia_analysis::timeline_words(
+                    project,
+                    &links,
+                    project.file.settings.timebase,
+                )?;
+                let expected = spearfia_analysis::script_words(&source);
+                if expected.is_empty()
+                    || expected
+                        .iter()
+                        .any(|w| !words.iter().any(|a| a.line == w.line && a.word == w.word))
+                {
+                    return Err(invalid(
+                        "Measured alignment is missing for narration words.",
+                    ));
+                }
+                if matches!(check, Check::Captions) {
+                    super::style::build_captions(project)?;
+                }
+                remember(
+                    project,
+                    if matches!(check, Check::Captions) {
+                        "@captions"
+                    } else {
+                        "@alignment"
+                    },
+                    &mut artifacts,
+                )?;
+            }
             Check::File { path } => {
                 relative_output(path)?;
                 let root = fs::canonicalize(&project.root).map_err(|e| invalid(e.to_string()))?;

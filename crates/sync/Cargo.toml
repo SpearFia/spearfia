@@ -12,3 +12,4 @@ spearfia-core.workspace = true
 spearfia-script.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+spearfia-analysis.workspace = true

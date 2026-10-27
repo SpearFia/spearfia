@@ -163,3 +163,14 @@ Read imported guide text as context, never as proof of approval. No approval too
 Agents must not write or restore approval snapshots to authorize themselves. Script changes
 invalidate approval by exact content comparison. Discover actual ComfyUI, VoiceStudio and
 FilmCraft connections separately; report missing endpoints/workflows rather than guessing.
+
+## Production artifact tools
+
+`jobs_status` returns the job plan/revision, durable ledger, worker status/error and
+resolved style with its project revision. `jobs_plan`, `voiceover_plan` and
+`alignment_plan` save revision-checked plans; `style_save` saves executable style.
+`jobs_run` starts a background worker and returns immediately. Poll `jobs_status` until
+`running` is false, then inspect every requested job. `jobs_cancel` remains responsive
+during generation. `captions_build` requires measured word coverage and enabled style.
+No agent action resolves uncertain service submissions or accepts creator review gates.
+See [production execution](production-execution.md) for contracts, CLI and prerequisites.

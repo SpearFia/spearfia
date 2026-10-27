@@ -100,3 +100,10 @@ spearfia --project 'E:\Videos\episode' pipeline stop
 the next continuation checks its content revision. Production controls and review
 acknowledgements are intentionally absent from the agent MCP/HTTP tool list. Approval
 remains a local creator workflow gate, not protection against arbitrary filesystem writes.
+
+## Artifact execution
+
+See [production execution](production-execution.md) for durable per-asset jobs, service
+recovery, measured word alignment, animated captions, visual treatments and native audio
+mixing. New default pipelines include these stages; existing saved assignments remain
+editable and are not automatically replaced.

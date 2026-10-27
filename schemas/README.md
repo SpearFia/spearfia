@@ -24,3 +24,8 @@ Then update the "Pinned to" line above with the spec commit, and commit both tog
 with any code changes the new schemas need.
 
 `document-edit.schema.json` and `visual-edit.schema.json` are copied unchanged from the pinned source commit. The existing schemas are unchanged from that commit; the Visual Script cue schema is referenced by the guide and is not embedded in this directory.
+
+Production jobs/state, word alignment, executable style/visual treatments and render-plan
+schemas, plus the extended pipeline checks, are copied unchanged from `spearfia-spec`
+commit `084beb4` on `feat/production-execution`. See
+[production execution](../docs/production-execution.md).

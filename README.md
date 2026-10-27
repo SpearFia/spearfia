@@ -35,7 +35,9 @@ project from the linked media.
 
 The **Production** page coordinates installed Claude Code and Codex CLI agents with
 per-stage model assignments, saved checkpoints, output checks and creator review gates.
-See [production coordinator](docs/production.md) for setup and CLI commands.
+See [production coordinator](docs/production.md) for setup and CLI commands, and
+[production execution](docs/production-execution.md) for durable service jobs, measured
+animated captions, executable visual treatments and actual audio mixing in FilmCraft.
 
 Start `spearfia mcp --project <folder>` for MCP stdio, or `spearfia api --project <folder>` for the authenticated loopback HTTP API. Script/Visual Script edits use revision checks and undo/redo; creator approval stays in the desktop. See [setup and tool reference](docs/agents.md).
 
