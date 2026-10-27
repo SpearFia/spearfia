@@ -59,7 +59,8 @@ pub fn tools() -> Result<Value, CoreError> {
         tool("media_list","List the project's media folders and files with roles. Link files by the exact path listed here.",empty.clone(),true),
         tool("links_list","List media links: quoted words, script line, media path, role, picture/audio kind, in/out, and status (linked, or lost when the words were edited away) with the current line.",empty.clone(),true),
         tool("links_add","Link media files to words of the saved script. Each entry: zero-based script line, exact words from that line (punctuation included, formatting marks omitted), a file path from media_list, optional source in/out (HH:MM:SS or seconds). Role and kind come from the file's media folder; voiceover folders link audio. Entries save together or not at all; an identical existing link returns its ID.",schema(json!({"links":{"type":"array","minItems":1,"maxItems":MAX_AGENT_LINKS,"items":link}}), &["links"]),false),
-        tool("links_remove","Remove one media link by its ID from links_list.",schema(json!({"id":string}), &["id"]),false)
+        tool("links_remove","Remove one media link by its ID from links_list.",schema(json!({"id":string}), &["id"]),false),
+        tool("timeline_push","Assemble a review timeline in FilmCraft from the links and the creator-approved script: voiceover sets the timing, picture fills it, :transition cues apply. Saves a new sync/review-<plan>.fcproj (never overwrites one) and returns its path, clip and transition counts, and issues (lost, missing, short or unplaced links, unmapped transitions). Refuses without approval; cannot grant it.",empty.clone(),false)
     ]}))
 }
 #[derive(Deserialize)]
@@ -366,6 +367,11 @@ impl Server {
                     .map_err(op)?;
                 Ok(json!({"removed":a.id}))
             }
+            "timeline_push" => {
+                let _: Empty = decode(arguments)?;
+                let cli = spearfia_adapter_filmcraft::find_cli()?;
+                Ok(spearfia_adapter_filmcraft::push(&self.editor.project, &cli)?.summary())
+            }
             _ => Err(invalid(format!("Unknown tool: {name}"))),
         }
     }
@@ -483,6 +489,7 @@ pub fn known_tool(name: &str) -> bool {
         "links_list",
         "links_add",
         "links_remove",
+        "timeline_push",
     ]
     .contains(&name)
 }
@@ -588,7 +595,7 @@ mod tests {
         assert_eq!(responses[0]["result"]["protocolVersion"], PROTOCOL);
         assert_eq!(
             responses[1]["result"]["tools"].as_array().unwrap().len(),
-            14
+            15
         );
         assert_eq!(responses[2]["result"]["isError"], true);
         assert_eq!(

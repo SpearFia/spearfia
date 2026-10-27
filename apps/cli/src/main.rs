@@ -7,7 +7,7 @@
 //! writes nothing.
 //!
 //! `mcp` and `api` serve the agent tools (see docs/agents.md); `channels`, `project` and
-//! `visuals` are read-only. Production handoff needs the creator's approval in the desktop.
+//! `visuals` are read-only; `push filmcraft` writes only new files under `sync/`. Production handoff needs the creator's approval in the desktop.
 
 use clap::{Parser, Subcommand};
 use spearfia_core::{app_state, channels, project::Project};
@@ -72,6 +72,14 @@ enum Cmd {
         /// Project folder; defaults to `--project`.
         folder: Option<PathBuf>,
     },
+    /// Build the linked media into a new FilmCraft review project. Needs the creator's
+    /// approval of the saved script; prints the review path, counts and issues as JSON.
+    Push {
+        #[arg(value_enum)]
+        target: PushTarget,
+        /// Project folder; defaults to `--project`.
+        folder: Option<PathBuf>,
+    },
     /// Read or export the Visual Script.
     Visuals {
         #[arg(value_enum)]
@@ -92,6 +100,11 @@ enum ProjectAction {
     Brief,
     Handoff,
     Status,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum PushTarget {
+    Filmcraft,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -150,6 +163,17 @@ fn run(cli: &Cli) -> Result<(), String> {
                 a => project.agent_brief(matches!(a, ProjectAction::Handoff), None),
             };
             println!("{}", text.map_err(|e| e.to_string())?);
+            return Ok(());
+        }
+        Cmd::Push {
+            target: PushTarget::Filmcraft,
+            folder,
+        } => {
+            let project = open(folder)?;
+            let fc = spearfia_adapter_filmcraft::find_cli()
+                .and_then(|cli| spearfia_adapter_filmcraft::push(&project, &cli))
+                .map_err(|e| e.to_string())?;
+            print_json(fc.summary());
             return Ok(());
         }
         Cmd::Visuals { action, folder } => {
@@ -260,7 +284,7 @@ fn run(cli: &Cli) -> Result<(), String> {
             }
         }
         Cmd::Mcp | Cmd::Api { .. } | Cmd::Channels { .. } | Cmd::ProjectInfo { .. } => {}
-        Cmd::Visuals { .. } => {}
+        Cmd::Visuals { .. } | Cmd::Push { .. } => {}
     }
     Ok(())
 }
@@ -362,6 +386,7 @@ mod tests {
             "spearfia project handoff p",
             "spearfia project status",
             "spearfia visuals cue-sheet p",
+            "spearfia push filmcraft p",
         ] {
             Cli::try_parse_from(args.split(' ')).unwrap_or_else(|e| panic!("{args}: {e}"));
         }
@@ -369,6 +394,7 @@ mod tests {
             "spearfia channels",
             "spearfia project approve p",
             "spearfia visuals render p",
+            "spearfia push resolve p",
         ] {
             assert!(Cli::try_parse_from(args.split(' ')).is_err(), "{args}");
         }

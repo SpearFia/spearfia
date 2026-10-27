@@ -594,7 +594,8 @@ pub(crate) fn ensure_loadable<T: serde::de::DeserializeOwned>(path: &Path) -> Re
     }
 }
 
-pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+/// Write `value` as pretty JSON, atomically (temp file, then rename).
+pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let mut text = serde_json::to_string_pretty(value).map_err(|e| CoreError::json(path, e))?;
     text.push('\n');
     write_text(path, &text)

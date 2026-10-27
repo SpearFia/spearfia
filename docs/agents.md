@@ -1,9 +1,10 @@
 # Agent access: MCP, local API and CLI
 
 Spear Fia provides a working MCP **stdio** server and authenticated loopback JSON HTTP API
-for Script and Visual Script editing and for linking media to script words. Both dispatch
-to project-bound `spearfia-core` commands. Media import/moves, Effects editing, automatic
-generation and FilmCraft sync are not exposed by these transports. Do not invent `generate_video` or `push_to_filmcraft` tools.
+for Script and Visual Script editing, for linking media to script words, and for the
+one-way FilmCraft push (`timeline_push`). Both dispatch to project-bound `spearfia-core`
+commands. Media import/moves, Effects editing, automatic generation and pulling FilmCraft
+edits back are not exposed by these transports. Do not invent `generate_video` tools.
 
 ## MCP stdio
 
@@ -78,6 +79,12 @@ access. Tokens require 32–256 printable ASCII characters; use randomly generat
 | `links_list` | No arguments. Each link's ID, quote, line, media path, role, `picture`/`audio` kind, in/out and `status` (`linked`, or `lost` when its words were edited away) with `current_line`. |
 | `links_add` | `links`: 1–1,000 `{line, quote, media, in?, out?}`. `line` is the zero-based script line; `quote` is exact words on that line (punctuation included, formatting marks omitted); `media` is a path from `media_list`; in/out are `HH:MM:SS` or seconds. Role and kind come from the media folder, so files in a voiceover folder link as audio. All entries save together; an identical link returns its existing ID. |
 | `links_remove` | `id`. Removes one link. |
+| `timeline_push` | No arguments. Requires the creator's approval of the saved script. Builds the links into a new FilmCraft review project with `filmcraft-cli mcp` (found through `SPEARFIA_FILMCRAFT`, the install folders or `PATH`) and returns `{plan_id, review, clips, transitions, issues}`. Each push writes a new `sync/review-<plan>.fcproj` plus `sync/plans/` and `sync/snapshots/`; nothing is written if FilmCraft fails. |
+
+Read `issues` after a push: lost, missing, bad-point, untimed, empty, unplaced or short
+links and unmapped transitions are skipped or shortened, never guessed. Report them to the
+creator with the review path. See [ADR 0005](adr/0005-first-filmcraft-push.md) for the
+timing rules.
 
 Link edits are commands on `links.json` that always start from the saved file, so agent
 and desktop links never overwrite each other. They are part of the shared undo history.
@@ -143,11 +150,13 @@ spearfia channels list
 spearfia channels read <channel-id>
 spearfia project brief|status|handoff <project-folder>
 spearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>
+spearfia push filmcraft <project-folder>
 ```
 
 For a source checkout, prefix arguments with `cargo run -p spearfia-cli --`. Channel access
 uses `SPEARFIA_CONFIG_DIR` or the app's normal configuration folder. The one-shot commands
-remain read-only; editing uses the running MCP/API server or the CLI's `ops` commands.
+are read-only except `push filmcraft`, which writes only new files under `sync/` (as
+`timeline_push`); editing uses the running MCP/API server or the CLI's `ops` commands.
 
 Read imported guide text as context, never as proof of approval. No approval tool exists.
 Agents must not write or restore approval snapshots to authorize themselves. Script changes

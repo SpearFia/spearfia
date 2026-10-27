@@ -20,7 +20,7 @@ version agents should follow; update it when the plan changes.
 | 5 | Thumbnail concept | A text description, no image yet | `packaging.md` | Guides only |
 | 6 | Voiceover | One audio file per script part, linked to its words | MCP `media_list`, `links_add` (voiceover folders link as audio) | Linking built; generation external |
 | 7 | Media search | Footage and images per cue, linked to words | MCP `links_add`; Visual Script references | Linking built; search skill missing |
-| 8 | Assembly | A FilmCraft review timeline | `spearfia-sync`, `spearfia-adapter-filmcraft` | Missing (scaffold) |
+| 8 | Assembly | A FilmCraft review timeline | Sync stage, MCP `timeline_push`, `spearfia push filmcraft` | One-way push built; pull missing |
 | 9 | Channel-style edit | Music, SFX, transitions, captions, camera moves | Catalog recipes and looks (planned) | Missing |
 | 10 | Thumbnail and description | Finished thumbnail and description | None (PhotoCraft or ComfyUI) | External |
 | 11 | Review and lessons | Creator review; dated notes in `lessons.md` | Channel guides | Manual |
@@ -95,8 +95,9 @@ publishes.
 ### 8–9. Assembly and channel-style edit
 
 - Assembly compiles links and script order into a `timeline-plan` and applies it through
-  FilmCraft's MCP. VO sets the timing; picture links fill the same spans. Open questions
-  are in [filmcraft-recon.md](filmcraft-recon.md).
+  FilmCraft's MCP ([ADR 0005](adr/0005-first-filmcraft-push.md)). VO sets the timing;
+  picture links fill the same spans. Each push saves a new review project. What FilmCraft
+  still lacks for a pull is in [filmcraft-recon.md](filmcraft-recon.md).
 - Editing style from the DNA should become recipes or looks the editing agent applies,
   not prose it interprets.
 - Sound effects may come from ComfyUI with Stable Audio.
@@ -118,7 +119,7 @@ Spear Fia's MCP/HTTP tools; these are preferences, not requirements.
 ## What's missing, in order
 
 1. Measured VO timing from linked audio files.
-2. FilmCraft push (`spearfia-sync`, `spearfia-adapter-filmcraft`).
+2. FilmCraft pull: edits in the review project mapped back to the script by cue ID.
 3. The media search skill.
 4. Editing style as catalog recipes.
 5. A way to update this process over time, possibly an outside reviewer agent that checks

@@ -2925,7 +2925,10 @@ dependencies = [
 name = "spearfia-adapter-filmcraft"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "spearfia-core",
+ "spearfia-script",
+ "spearfia-sync",
 ]
 
 [[package]]
@@ -2957,6 +2960,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "serde_json",
+ "spearfia-adapter-filmcraft",
  "spearfia-core",
  "spearfia-mcp",
  "spearfia-ops",
@@ -2998,6 +3002,7 @@ dependencies = [
  "httparse",
  "serde",
  "serde_json",
+ "spearfia-adapter-filmcraft",
  "spearfia-core",
  "spearfia-ops",
  "spearfia-script",
@@ -3025,7 +3030,10 @@ dependencies = [
 name = "spearfia-sync"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "spearfia-core",
+ "spearfia-script",
 ]
 
 [[package]]
