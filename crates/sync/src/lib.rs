@@ -90,6 +90,32 @@ pub enum Issue {
     },
 }
 
+impl Issue {
+    /// One line for the creator.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Lost { link } => format!("{link}: its words are no longer in the script"),
+            Self::Missing { link } => {
+                format!("{link}: the file is missing or FilmCraft can't read it")
+            }
+            Self::BadPoint { link } => format!("{link}: in/out is not HH:MM:SS or seconds"),
+            Self::Untimed { link } => {
+                format!("{link}: voiceover with no length (not an audio file?)")
+            }
+            Self::Empty { link } => format!("{link}: nothing left to place after in/out"),
+            Self::Unplaced { link } => format!("{link}: picture before the first voiceover"),
+            Self::Short { link, frames } => {
+                format!("{link}: media ends {frames} frames before its slot")
+            }
+            Self::Unmapped { cue, label } => format!(
+                "transition {}: \"{}\" has no FilmCraft match, no ID, or no picture clip after it",
+                cue.as_deref().unwrap_or("(no ID)"),
+                label.as_deref().unwrap_or("")
+            ),
+        }
+    }
+}
+
 /// Compile `links` over `script` into a plan. `media` maps each link's media path to its
 /// length in frames of `timebase`, or `None` for a still (any length). The plan has no
 /// `plan_id`; the caller names it.

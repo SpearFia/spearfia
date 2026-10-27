@@ -11,6 +11,7 @@ pub mod new_project;
 pub mod projects;
 pub mod script_stage;
 pub mod sfx_stage;
+pub mod sync_stage;
 pub mod timeline;
 pub mod transitions_stage;
 pub mod vision_catalog;

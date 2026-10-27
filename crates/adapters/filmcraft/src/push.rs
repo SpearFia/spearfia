@@ -1,7 +1,8 @@
 //! The one-way push (ADR 0005): compile `links.json` and the script into a timeline plan,
 //! build it in a headless FilmCraft session and save it as a new review project.
 //!
-//! Nothing is written until FilmCraft has built every item; a failure leaves no files.
+//! Runs only on the creator-approved script. Nothing is written until FilmCraft has built
+//! every item; a failure leaves no files.
 
 use crate::mcp::Client;
 use serde_json::{Value, json};
@@ -27,6 +28,15 @@ pub struct Pushed {
     pub issues: Vec<Issue>,
 }
 
+impl Pushed {
+    /// What the CLI and the MCP tool report: the review path, counts and every issue.
+    pub fn summary(&self) -> Value {
+        let count = |k: Kind| self.plan.items.iter().filter(|i| i.kind == k).count();
+        json!({"plan_id": self.plan_id, "review": self.review, "clips": count(Kind::Clip),
+               "transitions": count(Kind::Transition), "issues": self.issues})
+    }
+}
+
 /// Push `project`'s links to a new FilmCraft review project with the `filmcraft-cli` at `cli`.
 pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
     let plan_id = format!(
@@ -44,7 +54,8 @@ pub fn push(project: &Project, cli: &Path) -> Result<Pushed> {
             review.display()
         )));
     }
-    let script = spearfia_script::parse(&project.read_script()?);
+    // The creator's approval gates every entry point (CLI, MCP, desktop) here.
+    let script = spearfia_script::parse(&project.approved_script()?);
     let links = Links::load(project)?;
     let settings = &project.file.settings;
     let tb = settings.timebase;

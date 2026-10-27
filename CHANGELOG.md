@@ -73,6 +73,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `{#cue}` IDs, transitions), and saves a new `sync/review-<plan>.fcproj` with the plan and
   a sequence snapshot. Nothing is written if any step fails; earlier reviews are never
   overwritten.
+- Push entry points: the desktop **Sync** stage (approval and FilmCraft status, a Push
+  button, the saved review with its issues, Open in FilmCraft), `spearfia push filmcraft
+  <project>` and the MCP/API tool `timeline_push`. All require the creator's script
+  approval (`Project::approved_script`). Checked against FilmCraft 0.13.0.
 - Desktop app: Projects and Catalog tabs, New Project form, and the workspace with the
   workflow bar (Script, Media, Transitions, Effects, Music, Sound effects, Sync). The Script stage shows the
   script as a page with cue chips and transition dividers, plus a Markdown editing mode.

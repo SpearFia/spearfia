@@ -81,7 +81,7 @@ can read/check the handoff but have no CLI approval operation. This is a local w
 gate, not a security boundary against arbitrary filesystem writes.
 
 See [agents.md](agents.md) for implemented agent entry points and the current boundaries
-of implemented MCP/API editing and the remaining generation and FilmCraft sync scaffolds.
+of implemented MCP/API editing and the remaining generation and FilmCraft pull scaffolds.
 
 ## Visual Script
 

@@ -82,10 +82,14 @@ mode avoids.
 
 ### 3. Entry points
 
-The plan and snapshot files are written through `spearfia-core` (its `write_json`), and the
-push is one core command so the CLI (`spearfia push filmcraft`), the desktop button and the
-MCP tool (`timeline_push`) share it. It refuses to run without the creator's production
-handoff approval (`sync/approved-script.md`), like other production steps.
+The plan and snapshot files are written through `spearfia-core` (its `write_json`). The
+CLI (`spearfia push filmcraft <project>`), the desktop Sync stage and the MCP tool
+(`timeline_push`) all call `spearfia_adapter_filmcraft::push` (core can't depend on the
+adapter, so the shared function lives there). `push` reads the script only through
+`Project::approved_script()`, which fails unless the creator's approval
+(`sync/approved-script.md`, `sync/approved-channel.md`) covers exactly the saved script and
+brief, and rechecks the bytes. So no entry point can skip the gate, and it fails before
+FilmCraft starts.
 
 ## What FilmCraft lacks (upstream, via `CaesarFia/filmcraft`)
 
@@ -126,4 +130,4 @@ Only the first row blocks the pull. None blocks the push.
    proportional picture starts, lost and unplaced links, transition mapping) (done).
 3. Adapter: stdio MCP client, import, build, save; one integration test against
    `filmcraft-cli mcp` that is skipped when `detect()` finds no CLI (done).
-4. Core command, CLI subcommand, then the desktop button and MCP tool.
+4. Approval gate, CLI subcommand, desktop Sync stage and MCP tool (done).

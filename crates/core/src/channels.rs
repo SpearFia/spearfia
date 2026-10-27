@@ -426,6 +426,25 @@ impl Project {
         }
     }
 
+    /// The saved script, only while the creator's approval covers exactly it and the current
+    /// channel brief. Production steps (the FilmCraft push) read the script through this.
+    pub fn approved_script(&self) -> Result<String> {
+        let status = self.script_approval(None)?;
+        if status != Approval::Approved {
+            return Err(invalid(status.label()));
+        }
+        let script = read_limited(&self.script_path(), MAX_BRIEF_BYTES)?;
+        // Bind the returned bytes too: the script may change after the status check.
+        if optional(&self.root.join(APPROVED_SCRIPT), MAX_BRIEF_BYTES)?.as_deref()
+            != Some(script.as_str())
+        {
+            return Err(invalid(
+                "The script changed while preparing production. Review approval and retry.",
+            ));
+        }
+        Ok(script)
+    }
+
     pub fn agent_brief(&self, production: bool, buffer: Option<&str>) -> Result<String> {
         let status = self.script_approval(buffer)?;
         if production && status != Approval::Approved {
@@ -601,6 +620,7 @@ mod tests {
         let script = p.read_script().unwrap();
         assert_eq!(p.script_approval(None).unwrap(), Approval::Draft);
         assert!(p.agent_brief(true, None).is_err());
+        assert!(p.approved_script().is_err());
         assert!(
             p.agent_brief(false, None)
                 .unwrap()
@@ -612,6 +632,7 @@ mod tests {
             p.script_approval(Some(&script)).unwrap(),
             Approval::Approved
         );
+        assert_eq!(p.approved_script().unwrap(), script);
         let brief = p.agent_brief(true, None).unwrap();
         assert!(
             brief.contains(&script)
@@ -627,6 +648,7 @@ mod tests {
         p.write_script("New script").unwrap();
         assert_eq!(p.script_approval(None).unwrap(), Approval::ScriptChanged);
         assert!(p.agent_brief(true, None).is_err());
+        assert!(p.approved_script().is_err());
         p.approve_script("New script").unwrap();
         p.set_channel_brief(Some("# Channel\nUse diagrams."), "# Channel\nUse closeups.")
             .unwrap();

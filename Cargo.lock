@@ -2826,6 +2826,7 @@ name = "spearfia-cli"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "spearfia-adapter-filmcraft",
  "spearfia-core",
  "spearfia-mcp",
 ]
@@ -2865,6 +2866,7 @@ dependencies = [
  "httparse",
  "serde",
  "serde_json",
+ "spearfia-adapter-filmcraft",
  "spearfia-core",
  "spearfia-script",
 ]

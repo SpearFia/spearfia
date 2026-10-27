@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
-const HELP: &str = "Spear Fia\n\nspearfia mcp --project <project-folder>\nspearfia api --project <project-folder> [--port <port>]\nspearfia channels list\nspearfia channels read <channel-id>\nspearfia project brief <project-folder>\nspearfia project handoff <project-folder>\nspearfia project status <project-folder>\nspearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>\n\nChannel commands use SPEARFIA_CONFIG_DIR or the normal app config folder.\nProduction handoff requires the creator's saved-script approval in the desktop app.\nSee docs/agents.md for the workflow; these commands do not run generators.\n";
+const HELP: &str = "Spear Fia\n\nspearfia mcp --project <project-folder>\nspearfia api --project <project-folder> [--port <port>]\nspearfia channels list\nspearfia channels read <channel-id>\nspearfia project brief <project-folder>\nspearfia project handoff <project-folder>\nspearfia project status <project-folder>\nspearfia push filmcraft <project-folder>\nspearfia visuals read|cue-sheet|storyboard|prompts|handoff <project-folder>\n\nChannel commands use SPEARFIA_CONFIG_DIR or the normal app config folder.\nProduction handoff and push require the creator's saved-script approval in the desktop app.\nSee docs/agents.md for the workflow; these commands do not run generators.\n";
 
 fn version_line() -> String {
     format!("spearfia {}", env!("CARGO_PKG_VERSION"))
@@ -59,6 +59,14 @@ fn run(args: &[OsString], config: Option<&Path>) -> Result<String, CoreError> {
                 return Ok(project.script_approval(None)?.label().into());
             }
             project.agent_brief(action == "handoff", None)
+        }
+        (Some("push"), Some("filmcraft"), 3) => {
+            let path = args.get(2).ok_or_else(|| CoreError::Invalid(HELP.into()))?;
+            let project = Project::open(std::path::PathBuf::from(path))?;
+            let cli = spearfia_adapter_filmcraft::find_cli()?;
+            let pushed = spearfia_adapter_filmcraft::push(&project, &cli)?;
+            serde_json::to_string_pretty(&pushed.summary())
+                .map_err(|e| CoreError::Invalid(e.to_string()))
         }
         _ => Err(CoreError::Invalid(format!(
             "Unknown or incomplete command.\n\n{HELP}"
@@ -155,6 +163,8 @@ mod tests {
             vec!["channels", "list", "extra"],
             vec!["project", "handoff"],
             vec!["project", "approve", "x"],
+            vec!["push", "filmcraft"],
+            vec!["push", "resolve", "x"],
             vec!["channels", "read", "../outside"],
         ] {
             assert!(run(&args(&words), Some(&std::env::temp_dir())).is_err());

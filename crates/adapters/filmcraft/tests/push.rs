@@ -73,8 +73,9 @@ fn link(id: &str, quote: &str, line: usize, path: &str, role: MediaRole) -> Link
     }
 }
 
-fn project() -> Project {
-    let root = std::env::temp_dir().join(format!("spearfia-fc-push-{}", std::process::id()));
+/// A project with linked, generated media; `approved` also records the creator's approval.
+fn project(name: &str, approved: bool) -> Project {
+    let root = std::env::temp_dir().join(format!("spearfia-fc-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let p = create_project(&NewProject {
         name: "Push test".into(),
@@ -89,13 +90,18 @@ fn project() -> Project {
             goal: String::new(),
             avg_shot_seconds: None,
             cut_style: None,
+            template: None,
         },
         script: ScriptStart::Sections,
         media_folders: MediaFolder::defaults(),
         filmcraft: None,
+        channel_brief: Some("# Channel\nTest channel.".into()),
     })
     .unwrap();
     p.write_script(SCRIPT).unwrap();
+    if approved {
+        p.approve_script(SCRIPT).unwrap();
+    }
     std::fs::create_dir_all(root.join("gen")).unwrap();
     wav(&root.join("gen/one.wav"), 2);
     wav(&root.join("gen/two.wav"), 1);
@@ -155,9 +161,18 @@ fn pushes_links_to_a_saved_review_project() {
         eprintln!("skipped: no filmcraft-cli found (set SPEARFIA_FILMCRAFT)");
         return;
     };
-    let p = project();
+    let p = project("push", true);
     let pushed = push(&p, &cli).unwrap();
     assert_eq!(pushed.issues, vec![]);
+    let summary = pushed.summary();
+    assert_eq!(
+        (summary["clips"].as_u64(), summary["transitions"].as_u64()),
+        (Some(4), Some(1))
+    );
+    assert_eq!(
+        summary["review"].as_str().map(Path::new),
+        Some(pushed.review.as_path())
+    );
     let sync = p.root.join("sync");
     assert!(pushed.review.is_file());
     assert!(
@@ -200,5 +215,18 @@ fn pushes_links_to_a_saved_review_project() {
         "no transition in {seq}"
     );
 
+    let _ = std::fs::remove_dir_all(&p.root);
+}
+
+#[test]
+fn refuses_to_push_an_unapproved_script() {
+    let p = project("unapproved", false);
+    // The gate runs before FilmCraft starts, so no CLI is needed.
+    let e = push(&p, Path::new("no-such-filmcraft-cli"))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("approval"), "{e}");
+    let sync = p.root.join("sync");
+    assert!(!sync.join("plans").exists() && !sync.join("snapshots").exists());
     let _ = std::fs::remove_dir_all(&p.root);
 }

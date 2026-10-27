@@ -23,8 +23,9 @@ one through **Channel / handoff** in an existing project. Approve the saved scri
 before copying the production handoff for an agent.
 
 See [channel workflow](docs/channel-workflow.md) and [agent/CLI access](docs/agents.md).
-This release provides knowledge and approval-based handoff; it does not automatically
-run ComfyUI, VoiceStudio or FilmCraft sync.
+This release provides knowledge and approval-based handoff; it does not run ComfyUI or
+VoiceStudio. After approval, Sync (or `spearfia push filmcraft`) builds a FilmCraft review
+project from the linked media.
 
 ## Visual Script
 
