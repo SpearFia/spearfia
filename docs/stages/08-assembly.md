@@ -13,10 +13,16 @@ You build and refine the edited timeline for the current Spear Fia project (MCP 
    It places VO, footage on the words they're heard, applies edit/edit.md plus the
    channel rules (transitions, cards, zooms, SFX, markers), captions and mix, then saves a
    new sync/review-<plan>.fcproj.
-3. Read only its summary: one line per section (edits, seconds without picture), edit
-   problems, issues. sync/plans/<plan>.edit.txt lists every edit with its time.
-4. Look at each sync/filmstrips/<plan>/NN-*.jpg once. Fix problems by editing
-   edit/edit.md (wrong moment, missing zoom, bad card) or, for missing picture, running
+3. Read only its summary: one line per section (edits, seconds without picture, checks
+   flagged), `checks`, `not_applied`, `word_timing`, edit problems, issues.
+   sync/plans/<plan>.edit.txt lists every edit with its time.
+4. Fix every `checks` line first; each names its time, its edit line or cue and the fix
+   (a card off the frame, over the captions, over black, or too short to read). Card text
+   is the cue's TEXT lines in visuals/visuals.md; timing and placement are edit/edit.md.
+   `not_applied` settings are known gaps: don't look for them in FilmCraft.
+5. Look at edits.jpg (one frame per card and zoom, in edit.txt order) and each
+   sync/filmstrips/<plan>/NN-*.jpg once, for what checks can't measure: the wrong moment,
+   a weak shot, a missing zoom. Fix in edit/edit.md or, for missing picture, with
    media-search's `pool.py auto --fill-gaps`. Then push again. At most 3 rounds.
 
 Report the final review path, the section lines, and anything you couldn't fix. Stop

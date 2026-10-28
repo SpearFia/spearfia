@@ -36,6 +36,8 @@ pub struct Section {
     pub edits: usize,
     /// Spoken words timed by proportion because their voiceover file has no heard words.
     pub untimed_words: usize,
+    /// Layout and timing checks that flagged something in it.
+    pub checks: usize,
 }
 
 /// FilmCraft's time unit.
@@ -57,6 +59,8 @@ pub struct Pushed {
     pub untimed_voice: Vec<String>,
     /// Style settings asked for but not applied: unsupported keys, or levels with nothing to set.
     pub not_applied: Vec<String>,
+    /// Layout and timing problems found without looking at frames (`m:ss <edit line>: …`).
+    pub checks: Vec<String>,
     pub sections: Vec<Section>,
     pub filmstrips: Vec<PathBuf>,
     pub timebase: Timebase,
@@ -84,6 +88,9 @@ impl Pushed {
                 if s.untimed_words > 0 {
                     line += &format!(", {} words not word-timed", s.untimed_words);
                 }
+                if s.checks > 0 {
+                    line += &format!(", {} checks flagged", s.checks);
+                }
                 line
             })
             .collect();
@@ -92,7 +99,7 @@ impl Pushed {
                "transitions": count(Kind::Transition),
                "word_timing": format!("{timed}/{} voiceover files", self.voice_files),
                "untimed_voice": self.untimed_voice, "edits": self.edit.ops, "captions": self.edit.captions,
-               "not_applied": self.not_applied, "sections": sections, "edit_problems": self.edit.problems,
+               "not_applied": self.not_applied, "checks": self.checks, "sections": sections, "edit_problems": self.edit.problems,
                "filmstrips": self.filmstrips, "issues": self.issues})
     }
 }
@@ -291,6 +298,7 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let mut done = apply::apply(&mut fc, project, &plan, &clips, &style, &ops, tb, size);
     applied.ops = done.ops;
     problems.append(&mut done.problems);
+    let checks = apply::checks(&done.cards, &plan, &ops, &style, size, tb);
     if style.captions.enabled {
         match apply::captions(&mut fc, &items, &timing.words(), &style, tb) {
             Ok(n) => applied.captions = n,
@@ -344,6 +352,7 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
                     .iter()
                     .filter(|w| w.start >= *start && w.start < end && untimed(&w.path))
                     .count(),
+                checks: checks.iter().filter(|(f, _)| f >= start && *f < end).count(),
             }
         })
         .collect();
@@ -383,6 +392,7 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         voice_files: voice.len(),
         untimed_voice,
         not_applied,
+        checks: checks.into_iter().map(|(_, m)| m).collect(),
         sections,
         filmstrips,
         timebase: tb,

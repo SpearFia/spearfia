@@ -16,6 +16,19 @@ pub struct Applied {
     pub ops: usize,
     pub captions: usize,
     pub problems: Vec<String>,
+    /// Cards as placed, for the layout and timing checks.
+    pub cards: Vec<Card>,
+}
+
+/// A placed text card and the frame-space box FilmCraft measured for it.
+#[derive(Debug, Clone)]
+pub struct Card {
+    pub from: String,
+    pub frame: u64,
+    pub seconds: f64,
+    pub text: String,
+    /// `[x0, y0, x1, y1]` in frame pixels, when FilmCraft reported it.
+    pub bounds: Option<[f64; 4]>,
 }
 
 /// The placed picture clip covering `frame` on V2, or `None`.
@@ -68,7 +81,10 @@ pub fn apply(
                 let fps = f64::from(tb.num) / f64::from(tb.den);
                 let room = next_card.map_or(f64::MAX, |f| (f - op.frame) as f64 / fps - 0.1);
                 let secs = seconds.unwrap_or(style.edit.card.seconds).min(room);
-                card(fc, style, text.as_deref().unwrap_or_default(), secs, op.frame, tb, size)
+                let text = text.as_deref().unwrap_or_default();
+                card(fc, style, text, secs, op.frame, tb, size).map(|bounds| {
+                    out.cards.push(Card { from: op.from.clone(), frame: op.frame, seconds: secs, text: text.to_string(), bounds });
+                })
             }
             Action::Sfx { name, db } => sfx(fc, project, &mut sfx_items, name, db.unwrap_or(style.mix.sfx_db), op.frame),
             Action::Marker(text) => fc
@@ -79,6 +95,61 @@ pub fn apply(
         match r {
             Ok(()) => out.ops += 1,
             Err(e) => out.problems.push(format!("{} at {}: {e}", op.from, clock(op.frame, tb))),
+        }
+    }
+    out
+}
+
+/// Layout and timing checks on what was placed, worked out from the plan and measured card
+/// boxes, so only flagged times need looking at. Each line starts with the time and the
+/// edit line it came from.
+pub fn checks(cards: &[Card], plan: &TimelinePlan, ops: &[Op], style: &Style, size: [u32; 2], tb: Timebase) -> Vec<(u64, String)> {
+    let fps = f64::from(tb.num) / f64::from(tb.den);
+    let (w, h) = (f64::from(size[0]), f64::from(size[1]));
+    // Dips run from the first picture at or after their frame for their length.
+    let dips: Vec<(u64, u64)> = ops
+        .iter()
+        .filter_map(|o| match &o.action {
+            Action::Transition { effect, seconds } if effect.starts_with("dip") => picture_from(plan, o.frame)
+                .map(|i| (i.start_frame, i.start_frame + (seconds * fps).round() as u64)),
+            _ => None,
+        })
+        .collect();
+    // shortcut: a one-line caption block is taken as 1.3 × its font size tall, since FilmCraft
+    // doesn't report caption bounds; measure it if captions ever wrap to two lines.
+    let caption_band = style.captions.enabled.then(|| {
+        let bottom = h * (1.0 - style.captions.bottom_margin());
+        (bottom - style.captions.size * 1.3, bottom)
+    });
+    let mut out = Vec::new();
+    for c in cards {
+        let at = format!("{} {}", clock(c.frame, tb), c.from);
+        if let Some([x0, y0, x1, y1]) = c.bounds {
+            if x0 < 0.0 || y0 < 0.0 || x1 > w || y1 > h {
+                out.push((c.frame, format!(
+                    "{at}: card runs off the frame ({:.0}×{:.0} px in {w:.0}×{h:.0}); break or shorten its TEXT lines",
+                    x1 - x0,
+                    y1 - y0
+                )));
+            }
+            if let Some((top, bottom)) = caption_band
+                && y1 > top
+                && y0 < bottom
+            {
+                out.push((c.frame, format!("{at}: card reaches into the captions (bottom at {y1:.0} px, captions from {top:.0} px); use fewer lines")));
+            }
+        }
+        let end = c.frame + (c.seconds * fps).round() as u64;
+        let dark = (c.frame..end)
+            .filter(|&f| picture_at(plan, f).is_none() || dips.iter().any(|&(a, b)| a <= f && f < b))
+            .count();
+        if end > c.frame && dark * 2 > (end - c.frame) as usize {
+            out.push((c.frame, format!("{at}: card is over black for {:.1} of its {:.1} s; link a picture there or move the card", dark as f64 / fps, c.seconds)));
+        }
+        // Big card text is skimmed: about 240 words a minute, plus half a second to notice it.
+        let need = 0.5 + c.text.split_whitespace().count() as f64 / 4.0;
+        if c.seconds + 0.05 < need {
+            out.push((c.frame, format!("{at}: card shows {:.1} s, about {need:.1} s needed to read it; shorten it or give it room", c.seconds)));
         }
     }
     out
@@ -111,7 +182,8 @@ fn zoom(
     Ok(())
 }
 
-fn card(fc: &mut Client, style: &Style, text: &str, seconds: f64, frame: u64, tb: Timebase, size: [u32; 2]) -> Result<(), String> {
+/// Place a card; returns its measured frame-space box (`graphics.list` quad).
+fn card(fc: &mut Client, style: &Style, text: &str, seconds: f64, frame: u64, tb: Timebase, size: [u32; 2]) -> Result<Option<[f64; 4]>, String> {
     let c = &style.edit.card;
     let r = fc
         .command(
@@ -126,8 +198,16 @@ fn card(fc: &mut Client, style: &Style, text: &str, seconds: f64, frame: u64, tb
         json!({"clip": clip, "props": {"fill_color": c.color, "stroke": c.outline > 0.0, "stroke_width": c.outline,
                                         "align": "center", "position": [size[0] / 2, size[1] / 2]}}),
     )
-    .map(drop)
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    // Measuring is best effort: a card FilmCraft won't measure is placed, just unchecked.
+    let listed = fc.command("graphics.list", json!({"clip": clip})).ok();
+    let quad = listed.as_ref().and_then(|l| l["layers"][0]["quad"].as_array().cloned()).unwrap_or_default();
+    let pts: Vec<(f64, f64)> = quad.iter().filter_map(|p| Some((p[0].as_f64()?, p[1].as_f64()?))).collect();
+    Ok((!pts.is_empty()).then(|| {
+        let (xs, ys) = (pts.iter().map(|p| p.0), pts.iter().map(|p| p.1));
+        [xs.clone().fold(f64::MAX, f64::min), ys.clone().fold(f64::MAX, f64::min),
+         xs.fold(f64::MIN, f64::max), ys.fold(f64::MIN, f64::max)]
+    }))
 }
 
 fn sfx(
@@ -296,4 +376,39 @@ fn slug(s: &str) -> String {
 pub fn clock(frame: u64, tb: Timebase) -> String {
     let s = frame * u64::from(tb.den) / u64::from(tb.num);
     format!("{}:{:02}", s / 60, s % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spearfia_core::project::Timebase;
+
+    fn card(frame: u64, seconds: f64, text: &str, bounds: [f64; 4]) -> Card {
+        Card { from: format!("edit.md:{frame}"), frame, seconds, text: text.into(), bounds: Some(bounds) }
+    }
+
+    #[test]
+    fn checks_flag_overflow_captions_black_and_short_cards() {
+        let tb = Timebase::FPS_30;
+        let plan: TimelinePlan = serde_json::from_value(json!({"$schema": "x", "timebase": tb, "items": [
+            {"cue_id": "p1", "kind": "clip", "track": "V2", "start_frame": 60, "duration_frames": 540}]}))
+        .unwrap();
+        let ops = [Op { frame: 50, action: Action::Transition { effect: "dip_to_black".into(), seconds: 0.5 }, from: "rule section".into() }];
+        let style: Style = serde_json::from_value(json!({"captions": {"enabled": true, "size": 72, "position": [0.5, 0.82]}})).unwrap();
+        let fine = [700.0, 400.0, 1200.0, 600.0];
+        let cards = [
+            card(300, 3.0, "a b c", [-1028.0, 419.0, 2948.0, 712.0]),
+            card(310, 3.0, "a b c", [700.0, 700.0, 1200.0, 850.0]),
+            card(0, 3.0, "ROUND ONE", fine),
+            card(400, 1.0, "one two three four five six", fine),
+            card(450, 3.0, "a b c", fine),
+        ];
+        let out = checks(&cards, &plan, &ops, &style, [1920, 1080], tb);
+        let says = |frame: u64, what: &str| out.iter().any(|(f, m)| *f == frame && m.contains(what));
+        assert!(says(300, "runs off the frame (3976×293 px"), "{out:?}");
+        assert!(says(310, "reaches into the captions"), "{out:?}");
+        assert!(says(0, "over black for 2.5 of its 3.0 s"), "{out:?}");
+        assert!(says(400, "about 2.0 s needed"), "{out:?}");
+        assert_eq!(out.len(), 4, "{out:?}");
+    }
 }
