@@ -63,6 +63,44 @@ pub struct Style {
     pub recipes: Vec<Recipe>,
     #[serde(default)]
     pub edit: Rules,
+    /// Style settings asked for that the push doesn't apply (`captions.accent`, `mix.duck_db`),
+    /// so a report can say so instead of an agent hunting for them in FilmCraft.
+    #[serde(skip)]
+    pub not_applied: Vec<String>,
+}
+
+/// The keys of each style section that the push applies.
+const APPLIED: &[(&str, &[&str])] = &[
+    ("captions", &["enabled", "font", "size", "color", "outline", "max_chars", "margin", "position"]),
+    ("mix", &["enabled", "music_db", "sfx_db", "picture_db"]),
+];
+
+/// Set keys (not null, false, zero or empty) the push ignores; disabled sections ask nothing.
+fn not_applied(v: &serde_json::Value) -> Vec<String> {
+    use serde_json::Value;
+    let set = |x: &Value| match x {
+        Value::Null | Value::Bool(false) => false,
+        Value::Number(n) => n.as_f64() != Some(0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        _ => true,
+    };
+    let mut out = Vec::new();
+    for (k, x) in v.as_object().into_iter().flatten() {
+        match APPLIED.iter().find(|(s, _)| s == k) {
+            Some((_, keys)) if x["enabled"] != Value::Bool(false) => out.extend(
+                x.as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(key, val)| !keys.contains(&key.as_str()) && set(val))
+                    .map(|(key, _)| format!("{k}.{key}")),
+            ),
+            Some(_) => {}
+            None if !["spec_version", "recipes", "edit"].contains(&k.as_str()) => out.push(k.clone()),
+            None => {}
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,6 +146,9 @@ pub struct Mix {
     pub enabled: bool,
     pub music_db: f64,
     pub sfx_db: f64,
+    /// Picture clips' own sound, carried on A4 at this level for hand mixing. `None` (the
+    /// default) leaves picture silent, as clip-based channels want.
+    pub picture_db: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -202,8 +243,9 @@ pub fn merged_style(brief: Option<&str>, edit_md: Option<&str>) -> Result<(Style
             map.insert(k.clone(), x.clone());
         }
     }
+    let skipped = not_applied(&v);
     serde_json::from_value(v)
-        .map(|s| (s, found))
+        .map(|s: Style| (Style { not_applied: skipped, ..s }, found))
         .map_err(|e| format!("spearfia-style: {e}"))
 }
 
@@ -476,5 +518,23 @@ mod tests {
         let edit = "```spearfia-style\n{\"edit\": {\"rules\": [{\"on\": \"section\", \"do\": \"marker \\\"x\\\"\"}]}}\n```";
         let (m, found) = merged_style(Some(brief), Some(edit)).unwrap();
         assert!(found && m.captions.enabled && m.edit.rules.len() == 1);
+        // Picture sound stays muted unless a channel asks for it.
+        assert_eq!(s.mix.picture_db, None);
+        let asmr = "```spearfia-style
+{\"mix\": {\"enabled\": true, \"picture_db\": -8}}
+```";
+        assert_eq!(style(asmr).unwrap().unwrap().mix.picture_db, Some(-8.0));
+    }
+
+    #[test]
+    fn settings_the_push_ignores_are_reported() {
+        let brief = "```spearfia-style
+{\"spec_version\": 1, \"music\": \"x\",
+ \"captions\": {\"enabled\": true, \"font\": \"Impact\", \"accent\": \"#E3262B\", \"emphasis\": [], \"pop_ms\": 120},
+ \"mix\": {\"enabled\": true, \"music_db\": -16, \"voice_db\": 0, \"duck_db\": -6}}
+```";
+        assert_eq!(style(brief).unwrap().unwrap().not_applied, ["captions.accent", "captions.pop_ms", "mix.duck_db", "music"]);
+        let off = "```spearfia-style\n{\"mix\": {\"enabled\": false, \"duck_db\": -6}}\n```";
+        assert!(style(off).unwrap().unwrap().not_applied.is_empty());
     }
 }

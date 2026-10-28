@@ -229,38 +229,58 @@ pub fn mix(fc: &mut Client, plan: &TimelinePlan, clips: &BTreeMap<&str, u64>, st
 /// (when it's on PATH; the PNGs stay either way). Returns the sheets made.
 pub fn filmstrips(fc: &mut Client, dir: &std::path::Path, sections: &[(String, u64, u64)], frames: u64, tb: Timebase) -> (Vec<PathBuf>, Vec<String>) {
     let (mut sheets, mut problems) = (Vec::new(), Vec::new());
-    let secs = |f: u64| f as f64 * f64::from(tb.den) / f64::from(tb.num);
     for (n, (title, start, end)) in sections.iter().enumerate() {
         let name = format!("{:02}-{}", n + 1, slug(title));
-        let frames_dir = dir.join(&name);
-        if let Err(e) = std::fs::create_dir_all(&frames_dir) {
-            problems.push(format!("filmstrip {name}: {e}"));
-            continue;
-        }
-        for k in 0..frames {
-            let at = start + (end.saturating_sub(*start)) * (2 * k + 1) / (2 * frames);
-            match fc.frame_png(secs(at), 480) {
-                Ok(png) => {
-                    let _ = std::fs::write(frames_dir.join(format!("{k:02}.png")), png);
-                }
-                Err(e) => problems.push(format!("filmstrip {name}: {e}")),
-            }
-        }
-        let sheet = dir.join(format!("{name}.jpg"));
-        let tiled = std::process::Command::new("ffmpeg")
-            .args(["-hide_banner", "-loglevel", "error", "-y", "-framerate", "1", "-i"])
-            .arg(frames_dir.join("%02d.png"))
-            .args(["-frames:v", "1", "-vf", &format!("tile=3x{}", frames.div_ceil(3))])
-            .arg(&sheet)
-            .status()
-            .is_ok_and(|s| s.success());
-        if tiled {
-            sheets.push(sheet);
-        } else {
-            sheets.push(frames_dir);
-        }
+        let at: Vec<u64> = (0..frames)
+            .map(|k| start + (end.saturating_sub(*start)) * (2 * k + 1) / (2 * frames))
+            .collect();
+        sheets.extend(sheet(fc, dir, &name, &at, 3, tb, &mut problems));
     }
     (sheets, problems)
+}
+
+/// One sheet of the frames where cards and zooms land (in edit.txt order), so the decisions
+/// edit.md made can be checked without opening the timeline.
+pub fn edit_frames(fc: &mut Client, dir: &std::path::Path, ops: &[Op], tb: Timebase) -> (Option<PathBuf>, Vec<String>) {
+    // Most of a second in, so the card is up and the zoom has moved.
+    let settle = u64::from(tb.num) * 3 / (4 * u64::from(tb.den));
+    let at: Vec<u64> = ops
+        .iter()
+        .filter(|o| matches!(o.action, Action::Card { .. } | Action::Zoom(_)))
+        .map(|o| o.frame + settle)
+        .collect();
+    let mut problems = Vec::new();
+    if at.is_empty() {
+        return (None, problems);
+    }
+    (sheet(fc, dir, "edits", &at, 5, tb, &mut problems), problems)
+}
+
+/// Render `at` into `dir/<name>/NN.png` and tile them `cols` wide into `dir/<name>.jpg`
+/// (the PNG folder when ffmpeg can't).
+fn sheet(fc: &mut Client, dir: &std::path::Path, name: &str, at: &[u64], cols: usize, tb: Timebase, problems: &mut Vec<String>) -> Option<PathBuf> {
+    let frames_dir = dir.join(name);
+    if let Err(e) = std::fs::create_dir_all(&frames_dir) {
+        problems.push(format!("filmstrip {name}: {e}"));
+        return None;
+    }
+    for (k, f) in at.iter().enumerate() {
+        match fc.frame_png(*f as f64 * f64::from(tb.den) / f64::from(tb.num), 480) {
+            Ok(png) => {
+                let _ = std::fs::write(frames_dir.join(format!("{k:02}.png")), png);
+            }
+            Err(e) => problems.push(format!("filmstrip {name}: {e}")),
+        }
+    }
+    let sheet = dir.join(format!("{name}.jpg"));
+    let tiled = std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-framerate", "1", "-i"])
+        .arg(frames_dir.join("%02d.png"))
+        .args(["-frames:v", "1", "-vf", &format!("tile={cols}x{}", at.len().div_ceil(cols))])
+        .arg(&sheet)
+        .status()
+        .is_ok_and(|s| s.success());
+    Some(if tiled { sheet } else { frames_dir })
 }
 
 fn slug(s: &str) -> String {

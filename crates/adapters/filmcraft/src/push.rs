@@ -34,6 +34,8 @@ pub struct Section {
     pub picture_gap: u64,
     /// Edit operations placed in it.
     pub edits: usize,
+    /// Spoken words timed by proportion because their voiceover file has no heard words.
+    pub untimed_words: usize,
 }
 
 /// FilmCraft's time unit.
@@ -50,8 +52,11 @@ pub struct Pushed {
     pub issues: Vec<Issue>,
     /// Edit script, channel rules, captions and mix as applied.
     pub edit: Applied,
-    /// Whether heard voiceover words timed the plan (else: linear inside each voiceover).
-    pub word_timed: bool,
+    /// Voiceover files placed, and those with no heard words (timed linearly inside the file).
+    pub voice_files: usize,
+    pub untimed_voice: Vec<String>,
+    /// Style settings asked for but not applied: unsupported keys, or levels with nothing to set.
+    pub not_applied: Vec<String>,
     pub sections: Vec<Section>,
     pub filmstrips: Vec<PathBuf>,
     pub timebase: Timebase,
@@ -68,20 +73,27 @@ impl Pushed {
             .sections
             .iter()
             .map(|s| {
-                format!(
+                let mut line = format!(
                     "{} {} ({:.0} s): {} edits, {:.0} s without picture",
                     clock(s.start, tb),
                     s.title,
                     secs(s.end - s.start),
                     s.edits,
                     secs(s.picture_gap)
-                )
+                );
+                if s.untimed_words > 0 {
+                    line += &format!(", {} words not word-timed", s.untimed_words);
+                }
+                line
             })
             .collect();
+        let timed = self.voice_files - self.untimed_voice.len();
         json!({"plan_id": self.plan_id, "review": self.review, "clips": count(Kind::Clip),
-               "transitions": count(Kind::Transition), "word_timed": self.word_timed,
-               "edits": self.edit.ops, "captions": self.edit.captions, "sections": sections,
-               "edit_problems": self.edit.problems, "filmstrips": self.filmstrips, "issues": self.issues})
+               "transitions": count(Kind::Transition),
+               "word_timing": format!("{timed}/{} voiceover files", self.voice_files),
+               "untimed_voice": self.untimed_voice, "edits": self.edit.ops, "captions": self.edit.captions,
+               "not_applied": self.not_applied, "sections": sections, "edit_problems": self.edit.problems,
+               "filmstrips": self.filmstrips, "issues": self.issues})
     }
 }
 
@@ -169,12 +181,18 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let (mut plan, issues) = compile_heard(&script, &links, &media, tb, &heard);
     plan.plan_id = Some(plan_id.clone());
 
+    let edit_md = std::fs::read_to_string(project.root.join("edit").join("edit.md")).ok();
+    let brief = project.channel_brief()?;
+    let (style, _) = edit::merged_style(brief.as_deref(), edit_md.as_deref()).map_err(CoreError::Invalid)?;
+    let picture_sound = style.mix.picture_db.is_some();
     fc.command(
         "file.newSequence",
         json!({"name": project.name(), "width": settings.resolution[0], "height": settings.resolution[1],
-               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": 3, "audio": 3}),
+               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": 3,
+               "audio": if picture_sound { 4 } else { 3 }}),
     )?;
     let mut clips: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut sounds: Vec<u64> = Vec::new();
     for it in plan.items.iter().filter(|i| i.kind == Kind::Clip) {
         let Some(src) = &it.source else { continue };
         let item = items[&src.path];
@@ -196,6 +214,22 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
             json!({"clip": clip, "name": format!("{file} {{#{}}}", it.cue_id)}),
         )?;
         clips.insert(&it.cue_id, clip);
+        // The same span's own sound on A4 (an audio track takes a video file's sound alone),
+        // so it gets its own fader; stills have no length and no sound.
+        if picture_sound && it.track.starts_with('V') && media.get(&src.path).is_some_and(Option::is_some) {
+            let placed = fc.command(
+                "timeline.place",
+                json!({"item": item, "track": "A4", "frame": it.start_frame,
+                       "sourceIn": ticks(src.in_frame, tb), "duration": ticks(it.duration_frames, tb)}),
+            )?;
+            if let Some(sound) = placed["clips"][0].as_u64() {
+                fc.command(
+                    "clip.rename",
+                    json!({"clip": sound, "name": format!("{file} sound {{#{}}}", it.cue_id)}),
+                )?;
+                sounds.push(sound);
+            }
+        }
     }
     // Footage of any size fills the frame (FilmCraft's Scale to Frame Size on every picture).
     let pictures: Vec<u64> = plan
@@ -226,10 +260,7 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
 
     // The edit script and the channel's rules, captions and mix, all applied here.
     let timing = Timing::new(&script, &links, &media, tb, &heard);
-    let edit_md = std::fs::read_to_string(project.root.join("edit").join("edit.md")).ok();
     let mut applied = Applied::default();
-    let brief = project.channel_brief()?;
-    let (style, _) = edit::merged_style(brief.as_deref(), edit_md.as_deref()).map_err(CoreError::Invalid)?;
     let (lines, mut problems) = edit::parse(edit_md.as_deref().unwrap_or_default());
     let generated: Vec<GeneratedCue> = project
         .read_visuals()
@@ -268,8 +299,28 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     }
     if style.mix.enabled {
         problems.extend(apply::mix(&mut fc, &plan, &clips, &style));
+        if let Some(db) = style.mix.picture_db
+            && db != 0.0
+            && !sounds.is_empty()
+            && let Err(e) = fc.command("clip.audioGain", json!({"clips": sounds, "mode": "set", "db": db}))
+        {
+            problems.push(format!("mix A4: {e}"));
+        }
     }
     applied.problems = problems;
+
+    let mut not_applied = style.not_applied.clone();
+    if style.mix.enabled {
+        for (track, key, db) in [("A2", "mix.music_db", style.mix.music_db), ("A3", "mix.sfx_db", style.mix.sfx_db)] {
+            if db != 0.0 && !plan.items.iter().any(|i| i.kind == Kind::Clip && i.track == track) {
+                not_applied.push(format!("{key} (nothing on {track})"));
+            }
+        }
+    }
+    let words = timing.words();
+    let untimed = |p: &str| heard.get(p).is_none_or(Vec::is_empty);
+    let voice: BTreeSet<&str> = words.iter().map(|w| w.path.as_str()).collect();
+    let untimed_voice: Vec<String> = voice.iter().filter(|p| untimed(p)).map(|p| p.to_string()).collect();
 
     let starts = timing.sections(&script);
     let sections: Vec<Section> = starts
@@ -289,6 +340,10 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
                 end,
                 picture_gap: (end - start).saturating_sub(covered),
                 edits: ops.iter().filter(|o| o.frame >= *start && o.frame < end).count(),
+                untimed_words: words
+                    .iter()
+                    .filter(|w| w.start >= *start && w.start < end && untimed(&w.path))
+                    .count(),
             }
         })
         .collect();
@@ -311,8 +366,12 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let mut filmstrips = Vec::new();
     if opts.filmstrips {
         let spans: Vec<_> = sections.iter().map(|s| (s.title.clone(), s.start, s.end)).collect();
-        let (sheets, mut p) = apply::filmstrips(&mut fc, &sync.join("filmstrips").join(&plan_id), &spans, 6, tb);
+        let dir = sync.join("filmstrips").join(&plan_id);
+        let (sheets, mut p) = apply::filmstrips(&mut fc, &dir, &spans, 6, tb);
         filmstrips = sheets;
+        applied.problems.append(&mut p);
+        let (edits, mut p) = apply::edit_frames(&mut fc, &dir, &ops, tb);
+        filmstrips.extend(edits);
         applied.problems.append(&mut p);
     }
     Ok(Pushed {
@@ -321,7 +380,9 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         plan,
         issues,
         edit: applied,
-        word_timed: !heard.is_empty(),
+        voice_files: voice.len(),
+        untimed_voice,
+        not_applied,
         sections,
         filmstrips,
         timebase: tb,
