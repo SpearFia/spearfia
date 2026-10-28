@@ -174,6 +174,54 @@ pub struct Rules {
     pub card: CardStyle,
     #[serde(default)]
     pub rules: Vec<Rule>,
+    /// A title sting: a hold after a section with a background, card and hit.
+    #[serde(default)]
+    pub intro: Option<Intro>,
+    /// A music-only end screen after the last line.
+    #[serde(default)]
+    pub end_screen: Option<EndScreen>,
+}
+
+/// `{title}` in `card` is the video's title in capitals; files are project-relative, an SFX
+/// is a name in SFX/ as for `sfx` lines.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Intro {
+    /// Heading prefix of the section it follows.
+    pub after: String,
+    pub seconds: f64,
+    #[serde(default)]
+    pub picture: Option<String>,
+    #[serde(default)]
+    pub card: Option<String>,
+    #[serde(default)]
+    pub sfx: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EndScreen {
+    pub seconds: f64,
+    #[serde(default)]
+    pub picture: Option<String>,
+    #[serde(default)]
+    pub music: Option<String>,
+    /// The music plays alone here, so louder than a bed under narration.
+    #[serde(default = "end_music_db")]
+    pub music_db: f64,
+}
+
+fn end_music_db() -> f64 {
+    -6.0
+}
+
+impl Rules {
+    /// The narration-free time the intro and end screen need.
+    pub fn holds(&self, tb: spearfia_core::project::Timebase) -> crate::Holds {
+        let frames = |s: f64| (s * f64::from(tb.num) / f64::from(tb.den)).round() as u64;
+        crate::Holds {
+            after: self.intro.iter().map(|i| (i.after.clone(), frames(i.seconds))).collect(),
+            end: self.end_screen.as_ref().map_or(0, |e| frames(e.seconds)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -482,7 +530,7 @@ mod tests {
         };
         let links = Links { links: vec![vo], next_id: 2, unreadable: vec![] };
         let media = BTreeMap::from([("vo.wav".to_string(), Some(240))]);
-        let timing = Timing::new(&script, &links, &media, Timebase::FPS_30, &Heard::new());
+        let timing = Timing::new(&script, &links, &media, Timebase::FPS_30, &Heard::new(), &crate::Holds::default());
         let style: Style = serde_json::from_value(serde_json::json!({
             "edit": {"rules": [{"on": "section", "do": "transition dip-to-black 0.5"},
                                {"on": "generated", "do": "card | sfx impact"}]}

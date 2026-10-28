@@ -122,6 +122,15 @@ impl Issue {
 /// seconds)` in file time. Empty means linear timing inside each voiceover span.
 pub type Heard = BTreeMap<String, Vec<(String, f64)>>;
 
+/// Time with no narration: after a `##` section (`after`: heading prefix and frames), and
+/// `end` frames after the last voiceover. Later voiceover moves back by each hold; music
+/// runs through them.
+#[derive(Debug, Clone, Default)]
+pub struct Holds {
+    pub after: Vec<(String, u64)>,
+    pub end: u64,
+}
+
 /// Compile `links` over `script` into a plan. `media` maps each link's media path to its
 /// length in frames of `timebase`, or `None` for a still (any length). The plan has no
 /// `plan_id`; the caller names it.
@@ -131,22 +140,24 @@ pub fn compile(
     media: &BTreeMap<String, Option<u64>>,
     timebase: Timebase,
 ) -> (TimelinePlan, Vec<Issue>) {
-    compile_heard(script, links, media, timebase, &Heard::new())
+    compile_heard(script, links, media, timebase, &Heard::new(), &Holds::default())
 }
 
-/// [`compile`] with heard words: pictures, transitions and cues land on the frame their word
-/// is spoken instead of a linear estimate.
+/// [`compile`] with heard words and holds: pictures, transitions and cues land on the frame
+/// their word is spoken instead of a linear estimate.
 pub fn compile_heard(
     script: &Script,
     links: &Links,
     media: &BTreeMap<String, Option<u64>>,
     timebase: Timebase,
     heard: &Heard,
+    holds: &Holds,
 ) -> (TimelinePlan, Vec<Issue>) {
     let words = Words::new(script);
     let mut issues = Vec::new();
     let (vo, pictures) = anchor_links(links, media, timebase, &words, &mut issues);
-    let (mut items, spans, now) = voice(&vo, &words, heard, timebase, &mut issues);
+    let held = hold_lines(script, &words, holds);
+    let (mut items, spans, now, _) = voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
 
     // Pictures start where their words are spoken and run to the next picture on their
     // track or the end of their voiceover span, whichever comes first. Music and SFX run to
@@ -308,18 +319,55 @@ fn anchor_links<'l>(
     (vo, pictures)
 }
 
-/// Voiceover back to back on A1, and the span of script words each one owns.
+/// Each `after` hold as (first script line of the section after it, frames).
+fn hold_lines(script: &Script, words: &Words, holds: &Holds) -> Vec<(usize, u64)> {
+    let heads: Vec<(usize, &str)> = script
+        .blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(b, block)| match block {
+            Block::Heading { level: 2, text, .. } => Some((b, text.as_str())),
+            _ => None,
+        })
+        .collect();
+    holds
+        .after
+        .iter()
+        .filter_map(|(prefix, frames)| {
+            let k = heads.iter().position(|(_, t)| t.to_lowercase().starts_with(&prefix.to_lowercase()))?;
+            let next = heads.get(k + 1)?.0;
+            Some((words.meta.iter().position(|m| m.0 > next)?, *frames))
+        })
+        .collect()
+}
+
+/// Voiceover back to back on A1, with `held` holds before the voiceover at or after their
+/// line and `end` frames after it; the span of script words each one owns, and the holds as
+/// (start, frames), the end one last.
 fn voice(
     vo: &[Anchored],
     words: &Words,
     heard: &Heard,
     timebase: Timebase,
+    held: &[(usize, u64)],
+    end: u64,
     issues: &mut Vec<Issue>,
-) -> (Vec<Item>, Vec<Span>, u64) {
+) -> (Vec<Item>, Vec<Span>, u64, Vec<(u64, u64)>) {
     let mut items = Vec::new();
     let mut spans: Vec<Span> = Vec::new();
+    let mut gaps = Vec::new();
+    let mut pending: Vec<(usize, u64)> = held.to_vec();
     let mut now = 0;
     for v in vo {
+        // A hold sits after narration, so none before the first voiceover.
+        if !spans.is_empty() {
+            for (line, frames) in &mut pending {
+                if *frames > 0 && v.key.0 >= *line {
+                    gaps.push((now, *frames));
+                    now += std::mem::take(frames);
+                }
+            }
+        }
         let Some(len) = v.length else {
             issues.push(Issue::Untimed {
                 link: v.link.id.clone(),
@@ -362,7 +410,11 @@ fn voice(
             s.times = align(span, h, s.inp, s.len, timebase);
         }
     }
-    (items, spans, now)
+    if end > 0 {
+        gaps.push((now, end));
+        now += end;
+    }
+    (items, spans, now, gaps)
 }
 
 /// A link found in the script, with its source range in frames.
@@ -560,6 +612,8 @@ fn align(script: &[&str], heard: &[(String, f64)], inp: u64, len: u64, tb: Timeb
 pub struct Timing<'a> {
     words: Words<'a>,
     spans: Vec<Span>,
+    /// Holds as (start, frames), the end one last when there is one.
+    holds: Vec<(u64, u64)>,
 }
 
 /// A spoken script word with its sequence frames.
@@ -581,12 +635,14 @@ impl<'a> Timing<'a> {
         media: &BTreeMap<String, Option<u64>>,
         timebase: Timebase,
         heard: &Heard,
+        holds: &Holds,
     ) -> Self {
         let words = Words::new(script);
         let mut issues = Vec::new();
         let (vo, _) = anchor_links(links, media, timebase, &words, &mut issues);
-        let (_, spans, _) = voice(&vo, &words, heard, timebase, &mut issues);
-        Self { words, spans }
+        let held = hold_lines(script, &words, holds);
+        let (_, spans, _, gaps) = voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
+        Self { words, spans, holds: gaps }
     }
 
     /// The frame `quote` (near script line `line`) starts being spoken.
@@ -654,6 +710,17 @@ impl<'a> Timing<'a> {
     /// The end of the last voiceover clip.
     pub fn end(&self) -> u64 {
         self.spans.last().map_or(0, |s| s.start + s.len)
+    }
+
+    /// Holds between sections as (start, frames), in order.
+    pub fn holds(&self) -> Vec<(u64, u64)> {
+        let end = self.end();
+        self.holds.iter().copied().filter(|h| h.0 < end).collect()
+    }
+
+    /// The hold after the last voiceover as (start, frames), if any.
+    pub fn tail(&self) -> Option<(u64, u64)> {
+        self.holds.last().copied().filter(|h| h.0 >= self.end())
     }
 }
 

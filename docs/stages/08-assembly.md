@@ -9,6 +9,11 @@ You build and refine the edited timeline for the current Spear Fia project (MCP 
 
 1. Word timing: run the voiceover skill's scripts/vo_words.py on the project (it skips
    files already transcribed). Without it, timing falls back to an estimate.
+   Title sting and end screen: when the style has `edit.intro` / `edit.end_screen`, make
+   their files once per video (paths in the style): the sting background (a 4 s clip of
+   the video's subject, slightly darkened), the end-screen background (four 5 s clips,
+   blurred and darkened, 20 s), and with audio-gen a 2–3 s title hit (SFX/) and a ~22 s
+   outro bed (Music/). The push holds the narration for them and reports a missing file.
 2. Push: timeline_push {"filmstrips": true} (or `spearfia push filmcraft --filmstrips`).
    It places VO, footage on the words they're heard, applies edit/edit.md plus the
    channel rules (transitions, cards, zooms, SFX, markers), captions and mix, then saves a

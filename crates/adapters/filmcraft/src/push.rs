@@ -185,12 +185,14 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         .collect();
 
     let heard = heard(project);
-    let (mut plan, issues) = compile_heard(&script, &links, &media, tb, &heard);
-    plan.plan_id = Some(plan_id.clone());
-
     let edit_md = std::fs::read_to_string(project.root.join("edit").join("edit.md")).ok();
     let brief = project.channel_brief()?;
     let (style, _) = edit::merged_style(brief.as_deref(), edit_md.as_deref()).map_err(CoreError::Invalid)?;
+    // The intro and end screen need time with no narration.
+    let holds = style.edit.holds(tb);
+    let (mut plan, issues) = compile_heard(&script, &links, &media, tb, &heard, &holds);
+    plan.plan_id = Some(plan_id.clone());
+
     let picture_sound = style.mix.picture_db.is_some();
     fc.command(
         "file.newSequence",
@@ -266,7 +268,7 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     }
 
     // The edit script and the channel's rules, captions and mix, all applied here.
-    let timing = Timing::new(&script, &links, &media, tb, &heard);
+    let timing = Timing::new(&script, &links, &media, tb, &heard, &holds);
     let mut applied = Applied::default();
     let (lines, mut problems) = edit::parse(edit_md.as_deref().unwrap_or_default());
     let generated: Vec<GeneratedCue> = project
@@ -295,10 +297,13 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
 ", clock(o.frame, tb), o.from, o.action))
         .collect();
     let size = [settings.resolution[0], settings.resolution[1]];
-    let mut done = apply::apply(&mut fc, project, &plan, &clips, &style, &ops, tb, size);
+    let mut done = apply::apply(&mut fc, project, &plan, &clips, &style, &ops, &timing.holds(), tb, size);
     applied.ops = done.ops;
     problems.append(&mut done.problems);
-    let checks = apply::checks(&done.cards, &plan, &ops, &style, size, tb);
+    let mut extras = apply::extras(&mut fc, project, &style, &timing, &project.name(), tb, size);
+    problems.append(&mut extras.problems);
+    done.cards.append(&mut extras.cards);
+    let checks = apply::checks(&done.cards, &plan, &extras.pictures, &ops, &style, size, tb);
     if style.captions.enabled {
         match apply::captions(&mut fc, &items, &timing.words(), &style, tb) {
             Ok(n) => applied.captions = n,
@@ -330,17 +335,24 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let voice: BTreeSet<&str> = words.iter().map(|w| w.path.as_str()).collect();
     let untimed_voice: Vec<String> = voice.iter().filter(|p| untimed(p)).map(|p| p.to_string()).collect();
 
-    let starts = timing.sections(&script);
+    let mut starts = timing.sections(&script);
+    let tail = timing.tail();
+    if let Some((at, _)) = tail {
+        starts.push(("End screen".into(), at));
+    }
+    let last = tail.map_or(timing.end(), |(at, len)| at + len);
     let sections: Vec<Section> = starts
         .iter()
         .enumerate()
         .map(|(n, (title, start))| {
-            let end = starts.get(n + 1).map_or(timing.end(), |s| s.1).max(*start);
+            let end = starts.get(n + 1).map_or(last, |s| s.1).max(*start);
             let covered: u64 = plan
                 .items
                 .iter()
                 .filter(|i| i.kind == Kind::Clip && i.track == "V2")
-                .map(|i| (i.start_frame + i.duration_frames).min(end).saturating_sub(i.start_frame.max(*start)))
+                .map(|i| (i.start_frame, i.duration_frames))
+                .chain(extras.pictures.iter().copied())
+                .map(|(a, n)| (a + n).min(end).saturating_sub(a.max(*start)))
                 .sum();
             Section {
                 title: title.clone(),

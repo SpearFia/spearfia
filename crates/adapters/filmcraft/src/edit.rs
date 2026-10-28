@@ -6,7 +6,7 @@ use crate::push::ticks;
 use serde_json::json;
 use spearfia_core::project::{Project, Timebase};
 use spearfia_sync::edit::{Action, Op, Style};
-use spearfia_sync::{Item, Kind, TimelinePlan, TimedWord};
+use spearfia_sync::{Item, Kind, TimelinePlan, TimedWord, Timing};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -54,17 +54,20 @@ pub fn apply(
     clips: &BTreeMap<&str, u64>,
     style: &Style,
     ops: &[Op],
+    holds: &[(u64, u64)],
     tb: Timebase,
     size: [u32; 2],
 ) -> Applied {
     let mut out = Applied::default();
     let mut sfx_items: BTreeMap<String, u64> = BTreeMap::new();
     for (n, op) in ops.iter().enumerate() {
-        // A card ends before the next one starts: they share V3.
+        // A card ends before the next one or a hold (the intro's card) starts: they share V3.
         let next_card = ops[n + 1..]
             .iter()
-            .find(|o| matches!(o.action, Action::Card { .. }) && o.frame > op.frame)
-            .map(|o| o.frame);
+            .filter(|o| matches!(o.action, Action::Card { .. }) && o.frame > op.frame)
+            .map(|o| o.frame)
+            .chain(holds.iter().map(|h| h.0).filter(|&h| h > op.frame))
+            .min();
         let r = match &op.action {
             Action::Zoom(name) => zoom(fc, plan, clips, style, op.frame, name, tb),
             Action::Transition { effect, seconds } => match picture_from(plan, op.frame).and_then(|i| clips.get(i.cue_id.as_str())) {
@@ -100,10 +103,93 @@ pub fn apply(
     out
 }
 
+/// What the intro and end screen placed: their picture spans (for checks and the report),
+/// the intro card, and anything that failed.
+#[derive(Debug, Default)]
+pub struct Extras {
+    pub pictures: Vec<(u64, u64)>,
+    pub cards: Vec<Card>,
+    pub problems: Vec<String>,
+}
+
+/// Fill the timing's holds: the intro (background, title card, hit) in the first hold and the
+/// end screen (background, music fading out) in the tail.
+pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing, title: &str, tb: Timebase, size: [u32; 2]) -> Extras {
+    let mut out = Extras::default();
+    let fps = f64::from(tb.num) / f64::from(tb.den);
+    let mut pictures = Vec::new();
+    if let (Some(i), Some(&(at, len))) = (&style.edit.intro, timing.holds().first()) {
+        if let Some(p) = &i.picture {
+            match place(fc, project, p, "V2", at, len, tb) {
+                Ok(clip) => pictures.push((clip, at, len)),
+                Err(e) => out.problems.push(format!("intro picture: {e}")),
+            }
+        }
+        if let Some(text) = &i.card {
+            let text = text.replace("{title}", &title.to_uppercase());
+            let secs = len as f64 / fps;
+            match card(fc, style, &text, secs, at, tb, size) {
+                Ok(bounds) => out.cards.push(Card { from: "intro".into(), frame: at, seconds: secs, text, bounds }),
+                Err(e) => out.problems.push(format!("intro card: {e}")),
+            }
+        }
+        if let Some(name) = &i.sfx
+            && let Err(e) = sfx(fc, project, &mut BTreeMap::new(), name, style.mix.sfx_db, at)
+        {
+            out.problems.push(format!("intro sfx: {e}"));
+        }
+    }
+    if let (Some(e), Some((at, len))) = (&style.edit.end_screen, timing.tail()) {
+        if let Some(p) = &e.picture {
+            match place(fc, project, p, "V2", at, len, tb) {
+                Ok(clip) => pictures.push((clip, at, len)),
+                Err(err) => out.problems.push(format!("end screen picture: {err}")),
+            }
+        }
+        if let Some(m) = &e.music {
+            let fade = (2.0 * fps) as u64;
+            let r = place(fc, project, m, "A2", at, len, tb).and_then(|clip| {
+                fc.command("clip.audioGain", json!({"clips": [clip], "mode": "set", "db": e.music_db}))
+                    .and_then(|_| fc.command("sequence.applyAudioTransition", json!({"clip": clip, "edge": "out", "frames": fade})))
+                    .map(drop)
+                    .map_err(|e| e.to_string())
+            });
+            if let Err(err) = r {
+                out.problems.push(format!("end screen music: {err}"));
+            }
+        }
+    }
+    if !pictures.is_empty() {
+        let ids: Vec<u64> = pictures.iter().map(|p| p.0).collect();
+        let _ = fc.command("timeline.select", json!({"clips": ids, "add": false, "toggle": false}));
+        let _ = fc.command("clip.scaleToFrameSize", json!({}));
+        let _ = fc.command("edit.deselectAll", json!({}));
+    }
+    out.pictures = pictures.into_iter().map(|p| (p.1, p.2)).collect();
+    out
+}
+
+/// Import a project file and place `len` frames of it from its start on `track` at `at`.
+fn place(fc: &mut Client, project: &Project, rel: &str, track: &str, at: u64, len: u64, tb: Timebase) -> Result<u64, String> {
+    let file = project.root.join(rel);
+    if !file.is_file() {
+        return Err(format!("no {rel} in the project"));
+    }
+    let abs = std::path::absolute(&file).map_err(|e| e.to_string())?;
+    let r = fc.tool("media_import", json!({"paths": [abs.to_string_lossy()]})).map_err(|e| e.to_string())?;
+    let item = r["items"][0].as_u64().ok_or("FilmCraft could not import it")?;
+    let mut p = json!({"item": item, "track": track, "frame": at, "sourceIn": 0, "duration": ticks(len, tb)});
+    if track.starts_with('V') {
+        p["audio"] = json!(false);
+    }
+    let placed = fc.command("timeline.place", p).map_err(|e| e.to_string())?;
+    placed["clips"][0].as_u64().ok_or_else(|| "FilmCraft placed nothing".into())
+}
+
 /// Layout and timing checks on what was placed, worked out from the plan and measured card
 /// boxes, so only flagged times need looking at. Each line starts with the time and the
-/// edit line it came from.
-pub fn checks(cards: &[Card], plan: &TimelinePlan, ops: &[Op], style: &Style, size: [u32; 2], tb: Timebase) -> Vec<(u64, String)> {
+/// edit line it came from. `extra` pictures (intro, end screen) count as picture.
+pub fn checks(cards: &[Card], plan: &TimelinePlan, extra: &[(u64, u64)], ops: &[Op], style: &Style, size: [u32; 2], tb: Timebase) -> Vec<(u64, String)> {
     let fps = f64::from(tb.num) / f64::from(tb.den);
     let (w, h) = (f64::from(size[0]), f64::from(size[1]));
     // Dips run from the first picture at or after their frame for their length.
@@ -141,7 +227,7 @@ pub fn checks(cards: &[Card], plan: &TimelinePlan, ops: &[Op], style: &Style, si
         }
         let end = c.frame + (c.seconds * fps).round() as u64;
         let dark = (c.frame..end)
-            .filter(|&f| picture_at(plan, f).is_none() || dips.iter().any(|&(a, b)| a <= f && f < b))
+            .filter(|&f| (picture_at(plan, f).is_none() && !extra.iter().any(|&(a, n)| a <= f && f < a + n)) || dips.iter().any(|&(a, b)| a <= f && f < b))
             .count();
         if end > c.frame && dark * 2 > (end - c.frame) as usize {
             out.push((c.frame, format!("{at}: card is over black for {:.1} of its {:.1} s; link a picture there or move the card", dark as f64 / fps, c.seconds)));
@@ -403,12 +489,15 @@ mod tests {
             card(400, 1.0, "one two three four five six", fine),
             card(450, 3.0, "a b c", fine),
         ];
-        let out = checks(&cards, &plan, &ops, &style, [1920, 1080], tb);
+        let out = checks(&cards, &plan, &[], &ops, &style, [1920, 1080], tb);
         let says = |frame: u64, what: &str| out.iter().any(|(f, m)| *f == frame && m.contains(what));
         assert!(says(300, "runs off the frame (3976×293 px"), "{out:?}");
         assert!(says(310, "reaches into the captions"), "{out:?}");
         assert!(says(0, "over black for 2.5 of its 3.0 s"), "{out:?}");
         assert!(says(400, "about 2.0 s needed"), "{out:?}");
         assert_eq!(out.len(), 4, "{out:?}");
+        // An intro picture under the first card means it isn't over black.
+        let out = checks(&cards[2..3], &plan, &[(0, 60)], &ops, &style, [1920, 1080], tb);
+        assert!(out.is_empty(), "{out:?}");
     }
 }

@@ -350,13 +350,42 @@ fn heard_words_move_pictures_and_timing_reports_them() {
             .map(|(i, w)| (w.to_string(), if i < 6 { i as f64 * 0.5 } else { 8.0 + (i - 6) as f64 * 0.25 }))
             .collect(),
     )]);
-    let (plan, _) = compile_heard(&script, &links, &media, TB, &heard);
+    let (plan, _) = compile_heard(&script, &links, &media, TB, &heard, &Holds::default());
     assert_eq!(plan.items[1], clip_at("k2", "V2", 240, 60, "broll/a.mp4", 0));
-    let t = Timing::new(&script, &links, &media, TB, &heard);
+    let t = Timing::new(&script, &links, &media, TB, &heard, &Holds::default());
     assert_eq!(t.frame_of("almost made me quit.", 3), Some(240));
     assert_eq!(t.frame_of("ALMOST made me quit", 3), Some(240));
     let w = t.words();
     assert_eq!((w[6].text.as_str(), w[6].start, w[6].end), ("almost", 240, 248));
     assert_eq!(t.sections(&script).iter().map(|s| s.1).collect::<Vec<_>>(), [0, 270]);
     assert_eq!(t.end(), 300);
+}
+
+#[test]
+fn holds_push_later_voiceover_back_and_music_runs_through_them() {
+    use MediaRole::*;
+    let links = Links {
+        links: vec![
+            link("k1", "think it would help.", 1, "vo/one.wav", Voiceover, None),
+            link("k2", "I'm a circuit racer.", 5, "vo/two.wav", Voiceover, None),
+            link("k3", "think it would help.", 1, "music/bed.wav", Music, None),
+        ],
+        next_id: 4,
+        unreadable: Vec::new(),
+    };
+    let media = BTreeMap::from([
+        ("vo/one.wav".to_string(), Some(300)),
+        ("vo/two.wav".to_string(), Some(90)),
+        ("music/bed.wav".to_string(), Some(10_000)),
+    ]);
+    let script = spearfia_script::parse(SCRIPT);
+    let holds = Holds { after: vec![("cold open".into(), 120)], end: 600 };
+    let (plan, _) = compile_heard(&script, &links, &media, TB, &Heard::new(), &holds);
+    let at = |id: &str| plan.items.iter().find(|i| i.cue_id == id).map(|i| (i.start_frame, i.duration_frames));
+    assert_eq!(at("k1"), Some((0, 300)));
+    assert_eq!(at("k2"), Some((420, 90)), "Chapter One starts after the 120-frame hold");
+    assert_eq!(at("k3"), Some((0, 1110)), "music runs through the hold and the 600-frame end");
+    let t = Timing::new(&script, &links, &media, TB, &Heard::new(), &holds);
+    assert_eq!(t.sections(&script).iter().map(|s| s.1).collect::<Vec<_>>(), [0, 420]);
+    assert_eq!((t.holds(), t.tail(), t.end()), (vec![(300, 120)], Some((510, 600)), 510));
 }
