@@ -2960,9 +2960,11 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "serde_json",
+ "spearfia-adapter-filmcraft",
  "spearfia-core",
  "spearfia-mcp",
  "spearfia-ops",
+ "spearfia-script",
 ]
 
 [[package]]
@@ -3001,7 +3003,9 @@ dependencies = [
  "httparse",
  "serde",
  "serde_json",
+ "spearfia-adapter-filmcraft",
  "spearfia-core",
+ "spearfia-ops",
  "spearfia-script",
 ]
 

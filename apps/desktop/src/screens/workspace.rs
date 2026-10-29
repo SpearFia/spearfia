@@ -9,10 +9,11 @@ use crate::screens::{
     music_stage::MusicStage,
     script_stage::{ScriptEvent, ScriptStage},
     sfx_stage::SfxStage,
+    sync_stage::SyncStage,
     transitions_stage::TransitionsStage,
 };
 use crate::theme;
-use crate::widgets::{self, muted, panel, strong, text};
+use crate::widgets::{self, muted, panel, text};
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Margin, Panel, Sense, Stroke};
 use spearfia_core::links::Links;
 use spearfia_core::project::Project;
@@ -53,38 +54,6 @@ impl Stage {
             Self::Sync => "Sync",
         }
     }
-
-    /// What the stage will do, shown until it is built.
-    fn plan(self) -> &'static str {
-        match self {
-            Self::Script | Self::VisualScript => "",
-            Self::Media => {
-                "Link the project folders (A-roll, B-roll, Screen, Graphics), browse clips in a grid, \
-                or switch to the script view: highlight words, keep the highlight, and drop a clip on it."
-            }
-            Self::Effects => {
-                "Each line's looks and effects, a preview rendered by FilmCraft, and the settings \
-                of the selected effect, bound to analysis such as face tracking."
-            }
-            Self::Music => {
-                "The script laid out over time with music bars showing what each track covers, \
-                ducking under VO, gaps, and sync points like drop ↔ hard cut."
-            }
-            Self::Transitions => {
-                "Every cut between lines and sections: the outgoing and incoming shot, the \
-                transition, and where it came from (script divider, AI suggestion or default cut)."
-            }
-            Self::SoundEffects => {
-                "Every :sfx cue on the timeline over the script: stingers on words, whooshes on \
-                transitions and impacts on cuts, with sounds from the catalog to drag in and \
-                checks for clashes with music hits and VO."
-            }
-            Self::Sync => {
-                "Push the script to FilmCraft as a timeline plan, and pull FilmCraft edits back \
-                with a three-way merge by cue ID."
-            }
-        }
-    }
 }
 
 pub struct Workspace {
@@ -98,16 +67,20 @@ pub struct Workspace {
     pub transitions: TransitionsStage,
     pub effects: EffectsStage,
     pub sfx: SfxStage,
+    pub sync: SyncStage,
     pub links: Links,
     pub channel: crate::screens::channels::ProjectChannelView,
     /// Shown in the top bar if `links.json` can't be read.
     pub links_error: Option<String>,
     /// When `links.json` was last reread, to pick up links saved by agents.
     links_checked: f64,
+    /// Recorded VO lengths, cached between refreshes.
+    vo_probe: spearfia_ops::timing::Probe,
 }
 
 impl Workspace {
     pub fn new(project: Project) -> Self {
+        crate::vo_timing::set(Default::default());
         let script = ScriptStage::load(&project);
         let media = MediaStage::new(&project);
         let visuals = super::visual_stage::VisualStage::new(&project);
@@ -126,16 +99,19 @@ impl Workspace {
             transitions: TransitionsStage::new(),
             effects: EffectsStage::new(),
             sfx: SfxStage::new(),
+            sync: SyncStage::default(),
             links,
             channel: crate::screens::channels::ProjectChannelView::default(),
             links_error,
             links_checked: 0.0,
+            vo_probe: Default::default(),
         }
     }
 }
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let fc_found = app.filmcraft.is_some();
+    let fc = app.filmcraft.clone();
     let mut go_home = false;
     {
         let catalog = &app.catalog;
@@ -160,6 +136,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
                 Err(e) => ws.links_error = Some(e.to_string()),
             }
+            crate::vo_timing::set(spearfia_ops::timing::vo_seconds(
+                &ws.project,
+                ws.script.script(),
+                &ws.links,
+                &mut ws.vo_probe,
+            ));
         }
         Panel::top("ws-top")
             .exact_size(44.0)
@@ -280,7 +262,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 .effects
                 .show(ui, &ws.project, &mut ws.script, &ws.links, catalog),
             Stage::SoundEffects => ws.sfx.show(ui, &ws.project, &mut ws.script, catalog),
-            other => placeholder(ui, other),
+            Stage::Sync => ws
+                .sync
+                .show(ui, &ws.project, ws.script.source(), fc.as_ref()),
         }
         crate::screens::channels::project_window(ws, &app.channels, ui);
     }
@@ -428,26 +412,4 @@ fn stage_icon(p: &egui::Painter, c: egui::Pos2, s: Stage, color: egui::Color32) 
             ));
         }
     }
-}
-
-fn placeholder(ui: &mut egui::Ui, stage: Stage) {
-    egui::CentralPanel::default()
-        .frame(panel(theme::BG_APP).inner_margin(Margin::same(40)))
-        .show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space(80.0);
-                widgets::card(theme::BG_PANEL, theme::BORDER).show(ui, |ui| {
-                    ui.set_max_width(560.0);
-                    ui.label(strong(stage.label(), 18.0));
-                    ui.add_space(6.0);
-                    ui.label(text(stage.plan(), 13.0, theme::TEXT_2));
-                    ui.add_space(10.0);
-                    widgets::chip(
-                        ui,
-                        "Next up · designed in Figma (Workflow v1)",
-                        theme::ACCENT,
-                    );
-                });
-            });
-        });
 }

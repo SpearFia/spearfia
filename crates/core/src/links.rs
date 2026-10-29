@@ -8,7 +8,7 @@
 //! The format is not in `spearfia-spec` yet; it needs a `links` schema there.
 
 use crate::error::{CoreError, Result};
-use crate::project::{MediaRole, Project, ensure_loadable, write_json};
+use crate::project::{MediaRole, Project, ensure_loadable, write_text};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -22,15 +22,15 @@ pub const MAX_BATCH_BYTES: usize = 16 * 1024 * 1024;
 pub enum LinkKind {
     /// Shown on screen (B-roll, facecam, screen capture, graphics).
     Picture,
-    /// Heard (voiceover).
+    /// Heard (voiceover, music, sound effects).
     Audio,
 }
 
 impl LinkKind {
-    /// Voiceover folders supply sound; everything else supplies picture.
+    /// Voiceover, music and SFX folders supply sound; everything else supplies picture.
     pub fn for_role(role: MediaRole) -> Self {
         match role {
-            MediaRole::Voiceover => Self::Audio,
+            MediaRole::Voiceover | MediaRole::Music | MediaRole::Sfx => Self::Audio,
             _ => Self::Picture,
         }
     }
@@ -79,13 +79,19 @@ impl Links {
     /// kept in [`Links::unreadable`] rather than failing the whole file.
     pub fn load(project: &Project) -> Result<Self> {
         let path = project.root.join(LINKS_FILE);
-        let text = match fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
-            Err(e) => return Err(CoreError::io(&path, e)),
-        };
-        let raw: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| CoreError::json(&path, e))?;
+        match fs::read_to_string(&path) {
+            Ok(text) => Self::parse(&text).map_err(|e| CoreError::json(&path, e)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) => Err(CoreError::io(&path, e)),
+        }
+    }
+
+    /// Parse `links.json` text. Empty text (a file created, then undone) is an empty list.
+    pub fn parse(text: &str) -> std::result::Result<Self, serde_json::Error> {
+        if text.trim().is_empty() {
+            return Ok(Self::default());
+        }
+        let raw: serde_json::Value = serde_json::from_str(text)?;
         let mut out = Self {
             next_id: raw
                 .get("next_id")
@@ -107,16 +113,25 @@ impl Links {
         Ok(out)
     }
 
-    /// Write `links.json`, unreadable entries included. Refuses if the file on disk can't
-    /// be read, so a load failure never turns into an empty file.
-    pub fn save(&self, project: &Project) -> Result<()> {
-        let path = project.root.join(LINKS_FILE);
-        ensure_loadable::<serde_json::Value>(&path)?;
-        let mut v = serde_json::to_value(self).map_err(|e| CoreError::json(&path, e))?;
+    /// The exact text [`Links::save`] writes, unreadable entries included.
+    pub fn to_text(&self) -> std::result::Result<String, serde_json::Error> {
+        let mut v = serde_json::to_value(self)?;
         if let Some(items) = v.get_mut("links").and_then(|l| l.as_array_mut()) {
             items.extend(self.unreadable.iter().cloned());
         }
-        write_json(&path, &v)
+        let mut text = serde_json::to_string_pretty(&v)?;
+        text.push('\n');
+        Ok(text)
+    }
+
+    /// Write `links.json`. Refuses if the file on disk can't be read, so a load failure
+    /// never turns into an empty file. Edits go through `spearfia-ops` for undo; this is for
+    /// moves that rewrite paths.
+    pub fn save(&self, project: &Project) -> Result<()> {
+        let path = project.root.join(LINKS_FILE);
+        ensure_loadable::<serde_json::Value>(&path)?;
+        let text = self.to_text().map_err(|e| CoreError::json(&path, e))?;
+        write_text(&path, &text)
     }
 
     /// Add a link and return its new id (`k1`, `k2`, ...). Ids are never reused.
@@ -136,8 +151,9 @@ impl Links {
         id
     }
 
-    /// Add several clip/line anchors as one save. A failed save leaves memory unchanged.
-    pub fn add_batch(&mut self, project: &Project, requests: Vec<Link>) -> Result<Vec<String>> {
+    /// Add several clip/line anchors at once, returning their ids. An identical existing
+    /// link returns its id instead. On error nothing changes.
+    pub fn add_requests(&mut self, requests: Vec<Link>) -> Result<Vec<String>> {
         if requests.len() > MAX_BATCH_LINKS {
             return Err(CoreError::Invalid(
                 "Link at most 10,000 clip/line pairs at a time.".into(),
@@ -153,66 +169,41 @@ impl Links {
                     .into(),
             ));
         }
-        self.update(project, |updated| {
-            let mut ids = Vec::new();
-            for request in requests {
-                if let Some(existing) = updated.links.iter().find(|l| {
-                    l.quote == request.quote
-                        && l.line == request.line
-                        && l.media.path == request.media.path
-                        && l.role == request.role
-                        && l.kind == request.kind
-                        && l.in_point == request.in_point
-                        && l.out_point == request.out_point
-                }) {
-                    ids.push(existing.id.clone());
-                    continue;
-                }
-                let largest = updated
-                    .links
-                    .iter()
-                    .filter_map(|l| l.id.strip_prefix('k')?.parse::<u32>().ok())
-                    .max()
-                    .unwrap_or(0);
-                if largest == u32::MAX {
-                    return Err(CoreError::Invalid(
-                        "No media link IDs remain. The links were not changed.".into(),
-                    ));
-                }
-                ids.push(updated.add(request));
+        let mut updated = self.clone();
+        let mut ids = Vec::new();
+        for request in requests {
+            if let Some(existing) = updated.links.iter().find(|l| {
+                l.quote == request.quote
+                    && l.line == request.line
+                    && l.media.path == request.media.path
+                    && l.role == request.role
+                    && l.kind == request.kind
+                    && l.in_point == request.in_point
+                    && l.out_point == request.out_point
+            }) {
+                ids.push(existing.id.clone());
+                continue;
             }
-            Ok(ids)
-        })
+            let largest = updated
+                .links
+                .iter()
+                .filter_map(|l| l.id.strip_prefix('k')?.parse::<u32>().ok())
+                .max()
+                .unwrap_or(0);
+            if largest == u32::MAX {
+                return Err(CoreError::Invalid(
+                    "No media link IDs remain. The links were not changed.".into(),
+                ));
+            }
+            ids.push(updated.add(request));
+        }
+        *self = updated;
+        Ok(ids)
     }
 
     pub fn remove(&mut self, id: &str) -> Option<Link> {
         let i = self.links.iter().position(|l| l.id == id)?;
         Some(self.links.remove(i))
-    }
-
-    /// Remove a link and save. Like [`Links::add_batch`], starts from the saved file.
-    pub fn remove_saved(&mut self, project: &Project, id: &str) -> Result<Link> {
-        self.update(project, |links| {
-            links
-                .remove(id)
-                .ok_or_else(|| CoreError::Invalid(format!("No media link {id}.")))
-        })
-    }
-
-    /// Apply `change` to the saved `links.json` under the project edit lock, save it and
-    /// adopt the result, so a stale in-memory copy never overwrites another writer's links.
-    /// A failed change or save leaves memory and disk unchanged.
-    pub fn update<T>(
-        &mut self,
-        project: &Project,
-        change: impl FnOnce(&mut Links) -> Result<T>,
-    ) -> Result<T> {
-        let _lock = project.edit_lock()?;
-        let mut updated = Self::load(project)?;
-        let out = change(&mut updated)?;
-        updated.save(project)?;
-        *self = updated;
-        Ok(out)
     }
 
     /// How many links use this media file.
@@ -396,7 +387,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "{ \"links\": [ broken");
     }
     #[test]
-    fn batch_links_keep_multiple_clips_and_duplicate_saves_are_idempotent() {
+    fn batch_links_keep_multiple_clips_and_duplicates_are_idempotent() {
         let project = project();
         let mut links = Links::default();
         let mut first = sample();
@@ -407,42 +398,30 @@ mod tests {
         third.line = 4;
         third.quote = "three four".into();
         let requests = vec![first, second, third];
-        let ids = links.add_batch(&project, requests.clone()).unwrap();
+        let ids = links.add_requests(requests.clone()).unwrap();
         assert_eq!(ids.len(), 3);
-        assert_eq!(Links::load(&project).unwrap().links, links.links);
-        assert_eq!(links.add_batch(&project, requests).unwrap(), ids);
+        assert_eq!(links.add_requests(requests).unwrap(), ids);
         assert_eq!(links.links.len(), 3);
-    }
-
-    #[test]
-    fn failed_batch_preserves_memory_and_disk() {
-        let project = project();
-        let mut links = Links::default();
-        links.add(sample());
-        let before = links.clone();
-        fs::write(project.root.join(LINKS_FILE), "{broken").unwrap();
-        let mut extra = sample();
-        extra.media.path = "b.mp4".into();
-        assert!(links.add_batch(&project, vec![extra]).is_err());
-        assert_eq!(links, before);
+        // Saved text round-trips, and empty text is an empty list.
+        links.save(&project).unwrap();
+        assert_eq!(Links::load(&project).unwrap().links, links.links);
         assert_eq!(
             fs::read_to_string(project.root.join(LINKS_FILE)).unwrap(),
-            "{broken"
+            links.to_text().unwrap()
         );
+        assert_eq!(Links::parse("").unwrap(), Links::default());
     }
 
     #[test]
     fn exhausted_batch_ids_report_an_error() {
-        let project = project();
         let mut links = Links::default();
         let mut old = sample();
         old.id = format!("k{}", u32::MAX);
         links.links.push(old);
-        links.save(&project).unwrap();
         let before = links.clone();
         let mut extra = sample();
         extra.media.path = "b.mp4".into();
-        assert!(links.add_batch(&project, vec![extra]).is_err());
+        assert!(links.add_requests(vec![extra]).is_err());
         assert_eq!(links, before);
     }
 }

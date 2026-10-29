@@ -18,10 +18,11 @@ version agents should follow; update it when the plan changes.
 | 3 | Script | `script/script.md` | Script editor; MCP `document_read`/`document_edit`; creator approval | Built |
 | 4 | Visual Script | `visuals/visuals.md` cues tied to narration | Visual Script editor; MCP `visuals_edit`; exports | Built |
 | 5 | Thumbnail concept | A text description, no image yet | `packaging.md` | Guides only |
-| 6 | Voiceover | One audio file per script part, linked to its words | MCP `media_list`, `links_add` (voiceover folders link as audio) | Linking built; generation external |
+| 6 | Voiceover | One audio file per script section, linked to its words | `voiceover` skill (VoiceStudio API), `spearfia sections`, `links_add` | Built (not yet run on a real episode) |
 | 7 | Media search | Footage and images per cue, linked to words | MCP `links_add`; Visual Script references | Linking built; search skill missing |
-| 8 | Assembly | A FilmCraft review timeline | `spearfia-sync`, `spearfia-adapter-filmcraft` | Missing (scaffold) |
-| 9 | Channel-style edit | Music, SFX, transitions, captions, camera moves | Catalog recipes and looks (planned) | Missing |
+| 8 | Assembly | A FilmCraft review timeline | Sync stage, MCP `timeline_push`, `spearfia push filmcraft` | One-way push built; pull missing |
+| 9 | Music and SFX | Beds and effects on their own tracks | `audio-gen` skill (ComfyUI, Stable Audio 3); `music`/`sfx` folder roles → A2/A3 | Built (generation tested) |
+| 9b | Channel-style edit | Transitions, captions, camera moves | Catalog recipes and looks (planned) | Missing |
 | 10 | Thumbnail and description | Finished thumbnail and description | None (PhotoCraft or ComfyUI) | External |
 | 11 | Review and lessons | Creator review; dated notes in `lessons.md` | Channel guides | Manual |
 
@@ -78,25 +79,31 @@ publishes.
   them, so linking and timing are mechanical.
 - Link each file to its words with `links_add`. Files in a voiceover media folder link as
   audio.
-- Gap: Visual Script timing is still estimated at 150 wpm. Real VO durations should
-  replace the estimate.
+- Once VO files are linked, timelines and Visual Script timing labels use their real
+  lengths (spread over each section's lines by word count) instead of 150 wpm.
 
 ### 7. Media search
 
-- Needs a free, reliable media search skill. Suggested source order: the channel's
-  staples → free stock (Pexels, Pixabay, Wikimedia Commons, Internet Archive) → `yt-dlp`
-  sources → ComfyUI generation as the fallback.
-- Keep a log of used clips to avoid repeats, and tag downloads so the library grows across
-  videos. Exact shot matching is not required; footage that fits the topic is fine.
+- Skill: `media-search` in the skills repo (v0, keyless sources). Source order: the
+  shared library on `D:\SpearFia\library` → YouTube via `yt-dlp` (film, TV, games) or
+  Wikimedia Commons / Internet Archive / Openverse (real-world subjects) → unfilled, for
+  generation. Pexels and Pixabay come later with API keys.
+- Cues carry a match level (exact, subject, mood); subject is the default, so Thanos
+  from another movie fills a Thanos cue. Footage is pooled per chapter, segments are cut
+  without downloading whole videos, and `scripts/qc.py` plus a vision check reject
+  watermarks, overlays, burned-in subtitles and low quality.
+- Every file is recorded in the project's `media/manifest.jsonl` and the library index,
+  so clips are reused across videos and claims can be disputed.
 - Risk: film, TV and sports footage draws Content ID claims, and fully automated channels
-  face YouTube's reused-content monetization policy. Prefer generated graphics, Remotion
-  and licensed stock where possible.
+  face YouTube's reused-content monetization policy. Each channel's `production.md` says
+  which source classes it accepts; CrazyWhatIfs accepts short, muted fair-use clips.
 
 ### 8–9. Assembly and channel-style edit
 
 - Assembly compiles links and script order into a `timeline-plan` and applies it through
-  FilmCraft's MCP. VO sets the timing; picture links fill the same spans. Open questions
-  are in [filmcraft-recon.md](filmcraft-recon.md).
+  FilmCraft's MCP ([ADR 0005](adr/0005-first-filmcraft-push.md)). VO sets the timing;
+  picture links fill the same spans. Each push saves a new review project. What FilmCraft
+  still lacks for a pull is in [filmcraft-recon.md](filmcraft-recon.md).
 - Editing style from the DNA should become recipes or looks the editing agent applies,
   not prose it interprets.
 - Sound effects may come from ComfyUI with Stable Audio.
@@ -104,22 +111,26 @@ publishes.
 ## Agent assignments
 
 The creator's current choice, by stage. Any capable agent can run any stage through
-Spear Fia's MCP/HTTP tools; these are preferences, not requirements.
+Spear Fia's MCP/HTTP tools; these are preferences, not requirements. Ready-to-paste
+prompts for each stage, and the MCP setup for each agent, are in [stages/](stages/README.md).
+The pilot channel is CrazyWhatIfs: hour-plus pop-culture "what if" videos with film and
+TV clips under narration and animated captions.
 
 | Stage | Agent |
 | --- | --- |
 | Channel DNA | Opus 5.5 (synthesis) with a cheaper model for collection and analysis |
 | Ideas | Gemini 3 Pro |
 | Script, Visual Script, thumbnail concept | Sonnet 5.5 |
-| Voiceover and media search | Codex (Sol 6.1) |
+| Voiceover (`voiceover` skill) | Codex or Claude |
+| Music and SFX (`audio-gen` skill) | Codex or Claude |
+| Media search (`media-search` skill) | Codex with Tera at xhigh (vision for clip checks) |
 | Assembly and style edit | Codex (Sol 6.1) with FilmCraft MCP |
 | Thumbnail and description | Sonnet 5.5 with PhotoCraft and ComfyUI |
 
 ## What's missing, in order
 
-1. Measured VO timing from linked audio files.
-2. FilmCraft push (`spearfia-sync`, `spearfia-adapter-filmcraft`).
-3. The media search skill.
-4. Editing style as catalog recipes.
-5. A way to update this process over time, possibly an outside reviewer agent that checks
+1. Animated captions from the script and VO timing.
+2. FilmCraft pull: edits in the review project mapped back to the script by cue ID.
+3. Editing style as catalog recipes.
+4. A way to update this process over time, possibly an outside reviewer agent that checks
    each stage's output against the channel DNA.

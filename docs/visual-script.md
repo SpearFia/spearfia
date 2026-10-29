@@ -18,8 +18,8 @@ remain available. Visual paragraph types appear in the style menu and `/` insert
 Visual direction, Action / reveal, On-screen text, Graphic specification, Production prompt,
 Continuity / constraint, and Production note. The saved prefixes are `VISUAL:`, `ACTION:`,
 `TEXT:`, `GRAPHIC:`, `PROMPT:`, `CONTINUITY:` and `PRODUCTION NOTE:`. All prose in this editor
-is non-spoken, including text without a prefix. Timing labels derive from linked narration
-at 150 wpm; measured recording timing is not implemented.
+is non-spoken, including text without a prefix. Timing labels derive from linked narration:
+recorded VO lengths once VO files are linked, otherwise a 150 wpm estimate.
 
 ## Cue details and feedback
 
@@ -75,5 +75,5 @@ exports are planning artifacts and include attachment warnings. Exporting does n
 generator, validate a Remotion rig or transfer a FilmCraft timeline. Core operations parse,
 add, update, split, merge, reanchor and reorder shots; the desktop uses those operations.
 The one-shot CLI exports are read-only. The running [MCP and HTTP servers](agents.md) now
-provide document/typed-cue editing and revision-guarded undo/redo. Agents read both documents
+provide document/typed-cue editing and undo/redo through the project's shared history. Agents read both documents
 before editing and use returned revisions. Never forge approval records.

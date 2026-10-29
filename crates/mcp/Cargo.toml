@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 spearfia-core.workspace = true
 spearfia-script.workspace = true
+spearfia-ops.workspace = true
+spearfia-adapter-filmcraft.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 httparse = "1.10.1"

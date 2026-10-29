@@ -24,6 +24,37 @@ fn fail(msg: impl std::fmt::Display) -> CoreError {
     CoreError::Invalid(format!("FilmCraft: {msg}"))
 }
 
+/// Standard base64 (padding optional), or `None` on a stray character.
+fn base64(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0);
+    for c in s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        acc = (acc << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+#[test]
+fn base64_decodes() {
+    assert_eq!(base64("aGVsbG8=").unwrap(), b"hello");
+    assert_eq!(base64("aGk").unwrap(), b"hi");
+    assert!(base64("a*b").is_none());
+}
+
 impl Client {
     /// Start `cli mcp` headless (an empty in-memory project) and initialize the session.
     pub fn start(cli: &Path) -> Result<Self> {
@@ -109,6 +140,19 @@ impl Client {
     pub fn command(&mut self, id: &str, params: Value) -> Result<Value> {
         let what = format!("{id} {params}");
         self.call("command_run", json!({"id": id, "params": params}), &what)
+    }
+
+    /// Render the sequence frame at `seconds` as PNG bytes (`render_frame`).
+    pub fn frame_png(&mut self, seconds: f64, max_side: u32) -> Result<Vec<u8>> {
+        let r = self.request(
+            "tools/call",
+            json!({"name": "render_frame", "arguments": {"seconds": seconds, "max_side": max_side}}),
+        )?;
+        r["content"]
+            .as_array()
+            .and_then(|c| c.iter().find_map(|c| c["data"].as_str()))
+            .and_then(base64)
+            .ok_or_else(|| fail(format!("render_frame at {seconds} s returned no image")))
     }
 
     fn call(&mut self, name: &str, args: Value, what: &str) -> Result<Value> {

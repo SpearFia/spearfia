@@ -6,9 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Audio
+
+- Media folders can have the `music` and `sfx` roles (new projects get `Music/` and `SFX/`). Their links are audio, and the FilmCraft push places music on A2 (until the next music or the end of the narration) and SFX on A3 (once, at their words), leaving voiceover timing on A1 unchanged. Review sequences get three audio tracks.
+- Timelines (Script, Music, SFX, Effects, Transitions stages) and Visual Script timing labels use recorded VO lengths from linked voiceover files (WAV headers, or ffprobe for other formats), spread over each section's lines by word count; unrecorded lines keep the 150 wpm estimate.
+- `spearfia sections <project>` prints each section's VO lines as JSON for voiceover generation.
+
 ### Agent editing
 
 - Implement project-bound MCP stdio and authenticated local HTTP editing tools for narration and Visual Script, including typed cue operations, revision conflicts, reference binding and bounded undo/redo. Clean agent edits enter desktop undo; production approval remains creator-only.
+- One undo history: MCP/HTTP Script and Visual Script edits and media links (desktop and agents) now go through `spearfia-ops`, under the project edit lock, and are recorded in `sync/history.jsonl` with transitions. `edit_undo`/`edit_redo` (and new `spearfia redo`) work across the desktop, CLI and agents and survive restarts. Revisions are content versions shared by every surface; `expected_revision` on undo/redo is now optional. History keeps the newest 100 changes (32 MiB).
 - Agents can list project media and add, list and remove media links (`media_list`, `links_list`, `links_add`, `links_remove`). Link saves now start from the saved `links.json` under the project edit lock, so desktop and agent links no longer overwrite each other, and the desktop shows agent links within a second.
 
 ### Visual Script
@@ -73,6 +80,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `{#cue}` IDs, transitions), and saves a new `sync/review-<plan>.fcproj` with the plan and
   a sequence snapshot. Nothing is written if any step fails; earlier reviews are never
   overwritten.
+- Push entry points: the desktop **Sync** stage (approval and FilmCraft status, a Push
+  button, the saved review with its issues, Open in FilmCraft), `spearfia push filmcraft
+  <project>` and the MCP/API tool `timeline_push`. All require the creator's script
+  approval (`Project::approved_script`). Checked against FilmCraft 0.13.0.
 - Desktop app: Projects and Catalog tabs, New Project form, and the workspace with the
   workflow bar (Script, Media, Transitions, Effects, Music, Sound effects, Sync). The Script stage shows the
   script as a page with cue chips and transition dividers, plus a Markdown editing mode.

@@ -6,9 +6,19 @@
 
 use std::path::{Path, PathBuf};
 
+mod edit;
 pub mod mcp;
 mod push;
-pub use push::{Pushed, push};
+pub use push::{Options, Pushed, Section, push, push_with};
+
+/// The `filmcraft-cli` to push with, or an error that says how to point Spear Fia at it.
+pub fn find_cli() -> spearfia_core::error::Result<PathBuf> {
+    detect().and_then(|i| i.cli).ok_or_else(|| {
+        spearfia_core::CoreError::Invalid(format!(
+            "filmcraft-cli not found. Install FilmCraft, add it to PATH, or set {ENV_OVERRIDE} to its folder."
+        ))
+    })
+}
 
 /// The crate name, used in logs.
 pub const NAME: &str = env!("CARGO_PKG_NAME");

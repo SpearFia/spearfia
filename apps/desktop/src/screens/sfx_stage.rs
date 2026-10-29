@@ -28,7 +28,7 @@ use spearfia_catalog::{AssetKind, Catalog, Entry, LicenseStatus};
 use spearfia_core::project::Project;
 use spearfia_script::cuts;
 use spearfia_script::sfx::{self, Place, Sfx, Target, Word};
-use spearfia_script::timing::{self, Timeline};
+use spearfia_script::timing::Timeline;
 use spearfia_script::{Block, LineKind, Script};
 
 const RULER_H: f32 = 22.0;
@@ -139,7 +139,7 @@ impl SfxStage {
         catalog: &Catalog,
     ) {
         let parsed = spearfia_script::parse(script.source());
-        let tl = timing::timeline(&parsed);
+        let tl = crate::vo_timing::timeline(&parsed);
         let all = sfx::sfx(&parsed, &tl);
         let words = sfx::words(&parsed, &tl);
         let music_hits = hits(&tl, catalog);
@@ -238,7 +238,7 @@ impl SfxStage {
     fn apply(&mut self, project: &Project, script: &mut ScriptStage, e: Edit) {
         let src = script.source().to_owned();
         let parsed = spearfia_script::parse(&src);
-        let tl = timing::timeline(&parsed);
+        let tl = crate::vo_timing::timeline(&parsed);
         let all = sfx::sfx(&parsed, &tl);
         let find = |k: &str| all.iter().find(|s| cue_key(&s.cue) == k);
         let (out, select) = match e {
@@ -1160,6 +1160,7 @@ fn sound_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spearfia_script::timing;
 
     #[test]
     fn drops_snap_to_word_boundaries_and_cuts() {

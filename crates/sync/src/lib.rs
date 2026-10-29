@@ -11,6 +11,8 @@ use spearfia_core::project::{MediaRole, Timebase};
 use spearfia_script::{Block, Directive, Script, Segment, format::line_words};
 use std::collections::BTreeMap;
 
+pub mod edit;
+
 /// The crate name, used in logs and analyzer/version stamps.
 pub const NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -90,6 +92,45 @@ pub enum Issue {
     },
 }
 
+impl Issue {
+    /// One line for the creator.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Lost { link } => format!("{link}: its words are no longer in the script"),
+            Self::Missing { link } => {
+                format!("{link}: the file is missing or FilmCraft can't read it")
+            }
+            Self::BadPoint { link } => format!("{link}: in/out is not HH:MM:SS or seconds"),
+            Self::Untimed { link } => {
+                format!("{link}: voiceover with no length (not an audio file?)")
+            }
+            Self::Empty { link } => format!("{link}: nothing left to place after in/out"),
+            Self::Unplaced { link } => format!("{link}: picture before the first voiceover"),
+            Self::Short { link, frames } => {
+                format!("{link}: media ends {frames} frames before its slot")
+            }
+            Self::Unmapped { cue, label } => format!(
+                "transition {}: \"{}\" has no FilmCraft match, no ID, or no picture clip after it",
+                cue.as_deref().unwrap_or("(no ID)"),
+                label.as_deref().unwrap_or("")
+            ),
+        }
+    }
+}
+
+/// Words heard in each voiceover file (`media/vo-words.json`): media path → `(word, start
+/// seconds)` in file time. Empty means linear timing inside each voiceover span.
+pub type Heard = BTreeMap<String, Vec<(String, f64)>>;
+
+/// Time with no narration: after a `##` section (`after`: heading prefix and frames), and
+/// `end` frames after the last voiceover. Later voiceover moves back by each hold; music
+/// runs through them.
+#[derive(Debug, Clone, Default)]
+pub struct Holds {
+    pub after: Vec<(String, u64)>,
+    pub end: u64,
+}
+
 /// Compile `links` over `script` into a plan. `media` maps each link's media path to its
 /// length in frames of `timebase`, or `None` for a still (any length). The plan has no
 /// `plan_id`; the caller names it.
@@ -99,87 +140,40 @@ pub fn compile(
     media: &BTreeMap<String, Option<u64>>,
     timebase: Timebase,
 ) -> (TimelinePlan, Vec<Issue>) {
+    compile_heard(script, links, media, timebase, &Heard::new(), &Holds::default())
+}
+
+/// [`compile`] with heard words and holds: pictures, transitions and cues land on the frame
+/// their word is spoken instead of a linear estimate.
+pub fn compile_heard(
+    script: &Script,
+    links: &Links,
+    media: &BTreeMap<String, Option<u64>>,
+    timebase: Timebase,
+    heard: &Heard,
+    holds: &Holds,
+) -> (TimelinePlan, Vec<Issue>) {
     let words = Words::new(script);
     let mut issues = Vec::new();
-
-    let mut vo = Vec::new();
-    let mut pictures = Vec::new();
-    for l in &links.links {
-        let id = || l.id.clone();
-        let Some(a) = links::locate(&l.quote, l.line, &words.lines) else {
-            issues.push(Issue::Lost { link: id() });
-            continue;
-        };
-        let (Some(inp), Some(out)) = (point(&l.in_point, timebase), point(&l.out_point, timebase))
-        else {
-            issues.push(Issue::BadPoint { link: id() });
-            continue;
-        };
-        let Some(&length) = media.get(&l.media.path) else {
-            issues.push(Issue::Missing { link: id() });
-            continue;
-        };
-        let at = Anchored {
-            key: (a.line, a.first_word),
-            link: l,
-            inp: inp.unwrap_or(0),
-            out,
-            length,
-        };
-        match l.kind {
-            LinkKind::Audio => vo.push(at),
-            LinkKind::Picture => pictures.push(at),
-        }
-    }
-    let order =
-        |a: &Anchored, b: &Anchored| a.key.cmp(&b.key).then(id_num(a.link).cmp(&id_num(b.link)));
-    vo.sort_by(order);
-    pictures.sort_by(order);
-
-    // Voiceover back to back on A1; each owns the words up to the next one.
-    let mut items = Vec::new();
-    let mut spans: Vec<Span> = Vec::new();
-    let mut now = 0;
-    for v in &vo {
-        let Some(len) = v.length else {
-            issues.push(Issue::Untimed {
-                link: v.link.id.clone(),
-            });
-            continue;
-        };
-        let len = v.available(len);
-        if len == 0 {
-            issues.push(Issue::Empty {
-                link: v.link.id.clone(),
-            });
-            continue;
-        }
-        items.push(clip(v, "A1", now, len, None));
-        spans.push(Span {
-            key: v.key,
-            pos: words.pos(v.key),
-            start: now,
-            len,
-            words: 0,
-        });
-        now += len;
-    }
-    let ends: Vec<u64> = spans
-        .iter()
-        .skip(1)
-        .map(|s| s.pos)
-        .chain([words.total])
-        .collect();
-    for (s, end) in spans.iter_mut().zip(ends) {
-        s.words = end.saturating_sub(s.pos);
-    }
+    let (vo, pictures) = anchor_links(links, media, timebase, &words, &mut issues);
+    let held = hold_lines(script, &words, holds);
+    let (mut items, spans, now, _) = voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
 
     // Pictures start where their words are spoken and run to the next picture on their
-    // track or the end of their voiceover span, whichever comes first.
+    // track or the end of their voiceover span, whichever comes first. Music and SFX run to
+    // the next one on their track or the end of all voiceover and holds, stopping where the
+    // end screen (which brings its own music) starts.
+    let now = now - holds.end;
     let mut slots = Vec::new();
     for p in &pictures {
+        let audio = matches!(p.link.role, MediaRole::Music | MediaRole::Sfx);
         match time_at(&spans, &words, p.key) {
-            Some((t, s)) => slots.push((track_for(p.link.role), t, s.start + s.len, p)),
+            Some((t, s)) => slots.push((
+                track_for(p.link.role),
+                t,
+                if audio { now } else { s.start + s.len },
+                p,
+            )),
             None => issues.push(Issue::Unplaced {
                 link: p.link.id.clone(),
             }),
@@ -187,12 +181,20 @@ pub fn compile(
     }
     slots.sort_by_key(|&(track, t, _, p)| (track, t, p.key));
     let mut placed = Vec::new();
-    for (i, &(track, start, span_end, p)) in slots.iter().enumerate() {
+    for (i, &(track, at, span_end, p)) in slots.iter().enumerate() {
+        // Links on the same words share their stretch in link order instead of covering
+        // each other.
+        let same = |j: &usize| slots[*j].0 == track && slots[*j].1 == at;
+        let first = (0..=i).rev().take_while(same).last().unwrap_or(i);
+        let last = (i..slots.len()).take_while(same).last().unwrap_or(i);
         let next = slots
-            .get(i + 1)
+            .get(last + 1)
             .filter(|n| n.0 == track)
             .map_or(u64::MAX, |n| n.1);
-        let slot = span_end.min(next).saturating_sub(start);
+        let (k, n) = ((i - first) as u64, (last - first + 1) as u64);
+        let stretch = span_end.min(next).saturating_sub(at);
+        let start = at + stretch * k / n;
+        let slot = at + stretch * (k + 1) / n - start;
         let dur = p.length.map_or(slot, |len| p.available(len).min(slot));
         if dur == 0 {
             issues.push(Issue::Empty {
@@ -200,7 +202,8 @@ pub fn compile(
             });
             continue;
         }
-        let intent = (dur < slot).then(|| {
+        // A sound effect is meant to be shorter than the time until the next one.
+        let intent = (dur < slot && p.link.role != MediaRole::Sfx).then(|| {
             issues.push(Issue::Short {
                 link: p.link.id.clone(),
                 frames: slot - dur,
@@ -270,6 +273,152 @@ pub fn compile(
     (plan, issues)
 }
 
+/// Links found in the script, split into voiceover and everything placed against it, in
+/// script order.
+fn anchor_links<'l>(
+    links: &'l Links,
+    media: &BTreeMap<String, Option<u64>>,
+    timebase: Timebase,
+    words: &Words,
+    issues: &mut Vec<Issue>,
+) -> (Vec<Anchored<'l>>, Vec<Anchored<'l>>) {
+    let mut vo = Vec::new();
+    let mut pictures = Vec::new();
+    for l in &links.links {
+        let id = || l.id.clone();
+        let Some(a) = links::locate(&l.quote, l.line, &words.lines) else {
+            issues.push(Issue::Lost { link: id() });
+            continue;
+        };
+        let (Some(inp), Some(out)) = (point(&l.in_point, timebase), point(&l.out_point, timebase))
+        else {
+            issues.push(Issue::BadPoint { link: id() });
+            continue;
+        };
+        let Some(&length) = media.get(&l.media.path) else {
+            issues.push(Issue::Missing { link: id() });
+            continue;
+        };
+        let at = Anchored {
+            key: (a.line, a.first_word),
+            link: l,
+            inp: inp.unwrap_or(0),
+            out,
+            length,
+        };
+        // Music and SFX are placed like pictures, on their own audio tracks.
+        match (l.kind, l.role) {
+            (LinkKind::Audio, MediaRole::Music | MediaRole::Sfx) | (LinkKind::Picture, _) => {
+                pictures.push(at)
+            }
+            (LinkKind::Audio, _) => vo.push(at),
+        }
+    }
+    let order =
+        |a: &Anchored, b: &Anchored| a.key.cmp(&b.key).then(id_num(a.link).cmp(&id_num(b.link)));
+    vo.sort_by(order);
+    pictures.sort_by(order);
+    (vo, pictures)
+}
+
+/// Each `after` hold as (first script line of the section after it, frames).
+fn hold_lines(script: &Script, words: &Words, holds: &Holds) -> Vec<(usize, u64)> {
+    let heads: Vec<(usize, &str)> = script
+        .blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(b, block)| match block {
+            Block::Heading { level: 2, text, .. } => Some((b, text.as_str())),
+            _ => None,
+        })
+        .collect();
+    holds
+        .after
+        .iter()
+        .filter_map(|(prefix, frames)| {
+            let k = heads.iter().position(|(_, t)| t.to_lowercase().starts_with(&prefix.to_lowercase()))?;
+            let next = heads.get(k + 1)?.0;
+            Some((words.meta.iter().position(|m| m.0 > next)?, *frames))
+        })
+        .collect()
+}
+
+/// Voiceover back to back on A1, with `held` holds before the voiceover at or after their
+/// line and `end` frames after it; the span of script words each one owns, and the holds as
+/// (start, frames), the end one last.
+fn voice(
+    vo: &[Anchored],
+    words: &Words,
+    heard: &Heard,
+    timebase: Timebase,
+    held: &[(usize, u64)],
+    end: u64,
+    issues: &mut Vec<Issue>,
+) -> (Vec<Item>, Vec<Span>, u64, Vec<(u64, u64)>) {
+    let mut items = Vec::new();
+    let mut spans: Vec<Span> = Vec::new();
+    let mut gaps = Vec::new();
+    let mut pending: Vec<(usize, u64)> = held.to_vec();
+    let mut now = 0;
+    for v in vo {
+        // A hold sits after narration, so none before the first voiceover.
+        if !spans.is_empty() {
+            for (line, frames) in &mut pending {
+                if *frames > 0 && v.key.0 >= *line {
+                    gaps.push((now, *frames));
+                    now += std::mem::take(frames);
+                }
+            }
+        }
+        let Some(len) = v.length else {
+            issues.push(Issue::Untimed {
+                link: v.link.id.clone(),
+            });
+            continue;
+        };
+        let len = v.available(len);
+        if len == 0 {
+            issues.push(Issue::Empty {
+                link: v.link.id.clone(),
+            });
+            continue;
+        }
+        items.push(clip(v, "A1", now, len, None));
+        spans.push(Span {
+            key: v.key,
+            pos: words.pos(v.key),
+            start: now,
+            len,
+            words: 0,
+            path: v.link.media.path.clone(),
+            inp: v.inp,
+            times: Vec::new(),
+        });
+        now += len;
+    }
+    let ends: Vec<u64> = spans
+        .iter()
+        .skip(1)
+        .map(|s| s.pos)
+        .chain([words.total])
+        .collect();
+    for (s, end) in spans.iter_mut().zip(ends) {
+        s.words = end.saturating_sub(s.pos);
+    }
+
+    for s in &mut spans {
+        if let Some(h) = heard.get(&s.path) {
+            let span = &words.spoken[s.pos as usize..(s.pos + s.words) as usize];
+            s.times = align(span, h, s.inp, s.len, timebase);
+        }
+    }
+    if end > 0 {
+        gaps.push((now, end));
+        now += end;
+    }
+    (items, spans, now, gaps)
+}
+
 /// A link found in the script, with its source range in frames.
 struct Anchored<'a> {
     key: (usize, usize),
@@ -295,11 +444,18 @@ struct Span {
     start: u64,
     len: u64,
     words: u64,
+    /// The voiceover file and the frame it starts playing from.
+    path: String,
+    inp: u64,
+    /// Frames into the span where each of its words starts, from heard words; empty: linear.
+    times: Vec<u64>,
 }
 
 /// The script's lines as [`links::locate`] sees them, with spoken-word counts for timing.
 struct Words<'a> {
     lines: Vec<(usize, Vec<&'a str>)>,
+    /// Every spoken word in order; [`Words::pos`] indexes it.
+    spoken: Vec<&'a str>,
     /// Per line: block index, spoken words before it, and whether it is spoken.
     meta: Vec<(usize, u64, bool)>,
     total: u64,
@@ -307,7 +463,7 @@ struct Words<'a> {
 
 impl<'a> Words<'a> {
     fn new(script: &'a Script) -> Self {
-        let (mut lines, mut meta, mut total) = (Vec::new(), Vec::new(), 0);
+        let (mut lines, mut meta, mut total, mut spoken) = (Vec::new(), Vec::new(), 0, Vec::new());
         for (b, block) in script.blocks.iter().enumerate() {
             if let Block::Line {
                 kind,
@@ -319,11 +475,17 @@ impl<'a> Words<'a> {
                 meta.push((b, total, kind.is_spoken()));
                 if kind.is_spoken() {
                     total += words.len() as u64;
+                    spoken.extend(words.iter().copied());
                 }
                 lines.push((*line, words));
             }
         }
-        Self { lines, meta, total }
+        Self {
+            lines,
+            spoken,
+            meta,
+            total,
+        }
     }
 
     /// Spoken words before `(line index, word)`. Unspoken lines (on-screen directions) take
@@ -371,14 +533,197 @@ impl<'a> Words<'a> {
     }
 }
 
-/// Sequence frame for a script position: its voiceover span's start, plus the span's length
-/// in proportion to the spoken words before the position.
-// shortcut: linear word timing inside a span; use transcript word times once analysis has them.
+/// Sequence frame for a script position: its voiceover span's start, plus when its word is
+/// heard, or without heard words the span's length in proportion to the words before it.
 fn time_at<'s>(spans: &'s [Span], words: &Words, key: (usize, usize)) -> Option<(u64, &'s Span)> {
     let s = spans.iter().rev().find(|s| s.key <= key)?;
     let into = words.pos(key).saturating_sub(s.pos).min(s.words);
-    let offset = (s.len * into).checked_div(s.words).unwrap_or(0);
-    Some((s.start + offset, s))
+    Some((s.start + s.at(into), s))
+}
+
+impl Span {
+    /// Frames into the span where its word `k` starts (`k == words`: the span's end).
+    fn at(&self, k: u64) -> u64 {
+        self.times
+            .get(k as usize)
+            .copied()
+            .unwrap_or_else(|| (self.len * k).checked_div(self.words).unwrap_or(0))
+    }
+}
+
+/// Lowercase letters and digits only, so "Geralt's," and "geralts" match.
+fn norm(w: &str) -> String {
+    w.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Frames into a span (`len` frames, playing its file from frame `inp`) where each script word
+/// starts: the longest common subsequence of script and heard words gives the matched words
+/// their heard time; the rest are spread evenly between their matched neighbours.
+fn align(script: &[&str], heard: &[(String, f64)], inp: u64, len: u64, tb: Timebase) -> Vec<u64> {
+    let a: Vec<String> = script.iter().map(|w| norm(w)).collect();
+    let b: Vec<String> = heard.iter().map(|(w, _)| norm(w)).collect();
+    let (n, m) = (a.len(), b.len());
+    let at = |i: usize, j: usize| i * (m + 1) + j;
+    let mut lcs = vec![0u32; (n + 1) * (m + 1)];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            lcs[at(i, j)] = if !a[i].is_empty() && a[i] == b[j] {
+                lcs[at(i + 1, j + 1)] + 1
+            } else {
+                lcs[at(i + 1, j)].max(lcs[at(i, j + 1)])
+            };
+        }
+    }
+    let mut known: Vec<Option<u64>> = vec![None; n];
+    let (mut i, mut j) = (0, 0);
+    while i < n && j < m {
+        if !a[i].is_empty() && a[i] == b[j] {
+            let f = seconds_to_frames(heard[j].1.max(0.0), tb)
+                .saturating_sub(inp)
+                .min(len);
+            known[i] = Some(f);
+            (i, j) = (i + 1, j + 1);
+        } else if lcs[at(i + 1, j)] >= lcs[at(i, j + 1)] {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+    // Unmatched words share the time between the matched words around them.
+    let mut out = vec![0; n];
+    let mut prev = (0usize, 0u64); // (index + 1, frame) of the last placed known word; (0, 0): span start
+    for i in 0..n {
+        if let Some(f) = known[i] {
+            out[i] = f.max(prev.1);
+            prev = (i + 1, out[i]);
+            continue;
+        }
+        let (q, fq) = (i + 1..n)
+            .find_map(|q| known[q].map(|f| (q + 1, f)))
+            .unwrap_or((n + 1, len));
+        let fq = fq.max(prev.1);
+        out[i] = prev.1 + (fq - prev.1) * (i + 1 - prev.0) as u64 / (q - prev.0) as u64;
+    }
+    out
+}
+
+/// When each part of the script is spoken, for placing edits and captions after a push.
+pub struct Timing<'a> {
+    words: Words<'a>,
+    spans: Vec<Span>,
+    /// Holds as (start, frames), the end one last when there is one.
+    holds: Vec<(u64, u64)>,
+}
+
+/// A spoken script word with its sequence frames.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TimedWord {
+    pub text: String,
+    pub start: u64,
+    pub end: u64,
+    /// The voiceover file it is heard in, and where that file's frame 0 sits in the sequence
+    /// (`start - origin` is file time).
+    pub path: String,
+    pub origin: i64,
+}
+
+impl<'a> Timing<'a> {
+    pub fn new(
+        script: &'a Script,
+        links: &Links,
+        media: &BTreeMap<String, Option<u64>>,
+        timebase: Timebase,
+        heard: &Heard,
+        holds: &Holds,
+    ) -> Self {
+        let words = Words::new(script);
+        let mut issues = Vec::new();
+        let (vo, _) = anchor_links(links, media, timebase, &words, &mut issues);
+        let held = hold_lines(script, &words, holds);
+        let (_, spans, _, gaps) = voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
+        Self { words, spans, holds: gaps }
+    }
+
+    /// The frame `quote` (near script line `line`) starts being spoken.
+    /// Punctuation and case don't matter here, so an edit script can quote words loosely.
+    pub fn frame_of(&self, quote: &str, line: usize) -> Option<u64> {
+        let key = links::locate(quote, line, &self.words.lines)
+            .map(|a| (a.line, a.first_word))
+            .or_else(|| {
+                let needle: Vec<String> = quote.split_whitespace().map(norm).collect();
+                let mut best: Option<(usize, (usize, usize))> = None;
+                for (i, (no, words)) in self.words.lines.iter().enumerate() {
+                    let w: Vec<String> = words.iter().map(|w| norm(w)).collect();
+                    if let Some(at) = w.windows(needle.len().max(1)).position(|x| x == needle.as_slice()) {
+                        let d = no.abs_diff(line);
+                        if best.is_none_or(|(bd, _)| d < bd) {
+                            best = Some((d, (i, at)));
+                        }
+                    }
+                }
+                best.map(|b| b.1)
+            })?;
+        time_at(&self.spans, &self.words, key).map(|(t, _)| t)
+    }
+
+    /// Each `##` heading's text and the frame its first spoken word starts.
+    pub fn sections(&self, script: &Script) -> Vec<(String, u64)> {
+        let mut out = Vec::new();
+        for (b, block) in script.blocks.iter().enumerate() {
+            if let Block::Heading { level: 2, text, .. } = block {
+                let next = self
+                    .words
+                    .meta
+                    .iter()
+                    .position(|m| m.0 > b)
+                    .unwrap_or(self.words.lines.len());
+                // A heading before the first voiceover starts with it.
+                let t = time_at(&self.spans, &self.words, (next, 0))
+                    .map(|(t, _)| t)
+                    .or(self.spans.first().map(|s| s.start));
+                if let Some(t) = t {
+                    out.push((text.clone(), t));
+                }
+            }
+        }
+        out
+    }
+
+    /// Every spoken word inside a voiceover span, in order.
+    pub fn words(&self) -> Vec<TimedWord> {
+        let mut out = Vec::new();
+        for s in &self.spans {
+            for k in 0..s.words {
+                out.push(TimedWord {
+                    text: self.words.spoken[(s.pos + k) as usize].to_string(),
+                    start: s.start + s.at(k),
+                    end: s.start + s.at(k + 1).max(s.at(k)),
+                    path: s.path.clone(),
+                    origin: s.start as i64 - s.inp as i64,
+                });
+            }
+        }
+        out
+    }
+
+    /// The end of the last voiceover clip.
+    pub fn end(&self) -> u64 {
+        self.spans.last().map_or(0, |s| s.start + s.len)
+    }
+
+    /// Holds between sections as (start, frames), in order.
+    pub fn holds(&self) -> Vec<(u64, u64)> {
+        let end = self.end();
+        self.holds.iter().copied().filter(|h| h.0 < end).collect()
+    }
+
+    /// The hold after the last voiceover as (start, frames), if any.
+    pub fn tail(&self) -> Option<(u64, u64)> {
+        self.holds.last().copied().filter(|h| h.0 >= self.end())
+    }
 }
 
 fn track_for(role: MediaRole) -> &'static str {
@@ -386,6 +731,8 @@ fn track_for(role: MediaRole) -> &'static str {
         MediaRole::ARoll | MediaRole::Screen => "V1",
         MediaRole::Graphics => "V3",
         MediaRole::BRoll | MediaRole::Voiceover | MediaRole::Other => "V2",
+        MediaRole::Music => "A2",
+        MediaRole::Sfx => "A3",
     }
 }
 

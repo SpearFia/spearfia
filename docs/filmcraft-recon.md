@@ -5,6 +5,13 @@ open. Checked against FilmCraft 0.9.0 (`C:\dev\oss\filmcraft`, commit `1e71fd10`
 references below are FilmCraft paths at that commit. The push design that uses these
 answers is [ADR 0005](adr/0005-first-filmcraft-push.md).
 
+**Rechecked against FilmCraft 0.13.0** (installed CLI, 2026-10-27): the commands the push
+uses (`timeline.place`, `clip.rename`, `sequence.applyVideoTransition`, `file.newSequence`,
+`file.saveAs`, `file.import`) take the same params, the MCP tool list is unchanged,
+`command_batch` is still one undo step per edit, and there is still no clip metadata
+command (`clip.updateMetadata` refreshes media info). The push integration test passes
+on 0.13.0. Line numbers below are still from the 0.9.0 source.
+
 ## MCP tool list
 
 **Exists.** `filmcraft-cli mcp` serves MCP on stdio, headless (`--demo`, `--project p.fcproj`)
