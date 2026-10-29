@@ -197,7 +197,8 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     fc.command(
         "file.newSequence",
         json!({"name": project.name(), "width": settings.resolution[0], "height": settings.resolution[1],
-               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate, "video": 3,
+               "fps": f64::from(tb.num) / f64::from(tb.den), "sampleRate": settings.sample_rate,
+               "video": if style.edit.blur_strip.is_some() { 4 } else { 3 },
                "audio": if picture_sound { 4 } else { 3 }}),
     )?;
     let mut clips: BTreeMap<&str, u64> = BTreeMap::new();
@@ -303,6 +304,10 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let mut extras = apply::extras(&mut fc, project, &style, &timing, &project.name(), tb, size);
     problems.append(&mut extras.problems);
     done.cards.append(&mut extras.cards);
+    let video_end = timing.tail().map_or(timing.end(), |(at, len)| at + len);
+    if let Err(e) = apply::blur_strip(&mut fc, &style, video_end, tb, size) {
+        problems.push(format!("blur strip: {e}"));
+    }
     let checks = apply::checks(&done.cards, &plan, &extras.pictures, &ops, &style, size, tb);
     if style.captions.enabled {
         match apply::captions(&mut fc, &items, &timing.words(), &style, tb) {
@@ -324,8 +329,14 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
 
     let mut not_applied = style.not_applied.clone();
     if style.mix.enabled {
+        // `sfx` edit lines and the intro's sfx also land on A3, outside the plan.
+        let edit_sfx = ops.iter().any(|o| matches!(o.action, edit::Action::Sfx { .. }))
+            || style.edit.intro.as_ref().is_some_and(|i| i.sfx.is_some());
         for (track, key, db) in [("A2", "mix.music_db", style.mix.music_db), ("A3", "mix.sfx_db", style.mix.sfx_db)] {
-            if db != 0.0 && !plan.items.iter().any(|i| i.kind == Kind::Clip && i.track == track) {
+            if db != 0.0
+                && !(track == "A3" && edit_sfx)
+                && !plan.items.iter().any(|i| i.kind == Kind::Clip && i.track == track)
+            {
                 not_applied.push(format!("{key} (nothing on {track})"));
             }
         }

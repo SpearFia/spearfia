@@ -169,6 +169,28 @@ pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing
     out
 }
 
+/// One adjustment layer on V4 over frames `0..end`: a Gaussian blur masked to the bottom strip.
+pub fn blur_strip(fc: &mut Client, style: &Style, end: u64, tb: Timebase, size: [u32; 2]) -> Result<(), String> {
+    let Some(s) = &style.edit.blur_strip else { return Ok(()) };
+    let e = |r: spearfia_core::error::Result<serde_json::Value>| r.map_err(|e| e.to_string());
+    let item = e(fc.command("file.newAdjustmentLayer", json!({"seconds": end as f64 * f64::from(tb.den) / f64::from(tb.num)})))?["item"]
+        .as_u64()
+        .ok_or("FilmCraft made no adjustment layer")?;
+    let clip = e(fc.command("timeline.place", json!({"item": item, "track": "V4", "frame": 0, "duration": ticks(end, tb)})))?["clips"][0]
+        .as_u64()
+        .ok_or("FilmCraft placed no adjustment layer")?;
+    let (w, h) = (f64::from(size[0]), f64::from(size[1]));
+    let strip = (h * s.height).round();
+    e(fc.command("effects.apply", json!({"clips": [clip], "effect": "gaussian_blur"})))?;
+    e(fc.command("effects.setParam", json!({"clip": clip, "effect": 0, "param": "blurriness", "value": s.blur})))?;
+    e(fc.command("effects.setParam", json!({"clip": clip, "effect": 0, "param": "repeat_edge", "value": true})))?;
+    // Wider than the frame so the feather doesn't soften the strip's sides.
+    e(fc.command("masks.add", json!({"clip": clip, "effect": 0, "shape": "rectangle",
+                                     "center": [w / 2.0, h - strip / 2.0], "size": [w * 1.1, strip]})))?;
+    e(fc.command("masks.set", json!({"clip": clip, "effect": 0, "mask": 0, "feather": s.feather})))?;
+    Ok(())
+}
+
 /// Import a project file and place `len` frames of it from its start on `track` at `at`.
 fn place(fc: &mut Client, project: &Project, rel: &str, track: &str, at: u64, len: u64, tb: Timebase) -> Result<u64, String> {
     let file = project.root.join(rel);

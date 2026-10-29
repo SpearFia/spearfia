@@ -244,9 +244,25 @@ impl Script {
 /// Inline marks that are formatting, not words (`**bold**`, `++underline++`, ...).
 pub const MARKS: [char; 4] = ['*', '+', '~', '`'];
 
-/// Whether a whitespace-separated token is a word, not formatting marks alone (`**`).
+/// Whether a whitespace-separated token is a word: not formatting marks alone (`**`), and
+/// not a voice tag like `[excited]` (said to the TTS model, never spoken or captioned).
 pub fn is_word(token: &str) -> bool {
-    token.chars().any(|c| !MARKS.contains(&c))
+    token.chars().any(|c| !MARKS.contains(&c)) && !is_voice_tag(token)
+}
+
+/// `[excited]`, `[laughs]`: one lower-case word in brackets, maybe with punctuation after.
+fn is_voice_tag(token: &str) -> bool {
+    let t = token.trim_end_matches(|c: char| c.is_ascii_punctuation() && c != ']');
+    t.strip_prefix('[')
+        .and_then(|t| t.strip_suffix(']'))
+        .is_some_and(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_lowercase() || c == '-'))
+}
+
+#[cfg(test)]
+#[test]
+fn voice_tags_are_not_words() {
+    let w: Vec<&str> = words_in("[excited] Round one goes to [Geralt] [curious], really [ON").collect();
+    assert_eq!(w, ["Round", "one", "goes", "to", "[Geralt]", "really", "[ON"]);
 }
 
 /// The words of a text segment: whitespace-separated, skipping formatting-only tokens.

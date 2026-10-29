@@ -180,6 +180,28 @@ pub struct Rules {
     /// A music-only end screen after the last line.
     #[serde(default)]
     pub end_screen: Option<EndScreen>,
+    /// A blurred strip across the bottom of the whole video (hides corner watermarks;
+    /// captions sit on it).
+    #[serde(default)]
+    pub blur_strip: Option<BlurStrip>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlurStrip {
+    /// Fraction of the frame height, from the bottom.
+    pub height: f64,
+    #[serde(default = "strip_blur")]
+    pub blur: f64,
+    #[serde(default = "strip_feather")]
+    pub feather: f64,
+}
+
+fn strip_blur() -> f64 {
+    60.0
+}
+
+fn strip_feather() -> f64 {
+    12.0
 }
 
 /// `{title}` in `card` is the video's title in capitals; files are project-relative, an SFX

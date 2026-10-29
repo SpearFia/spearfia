@@ -161,7 +161,9 @@ pub fn compile_heard(
 
     // Pictures start where their words are spoken and run to the next picture on their
     // track or the end of their voiceover span, whichever comes first. Music and SFX run to
-    // the next one on their track or the end of all voiceover (`now`).
+    // the next one on their track or the end of all voiceover and holds, stopping where the
+    // end screen (which brings its own music) starts.
+    let now = now - holds.end;
     let mut slots = Vec::new();
     for p in &pictures {
         let audio = matches!(p.link.role, MediaRole::Music | MediaRole::Sfx);

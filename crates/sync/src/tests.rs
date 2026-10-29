@@ -362,7 +362,7 @@ fn heard_words_move_pictures_and_timing_reports_them() {
 }
 
 #[test]
-fn holds_push_later_voiceover_back_and_music_runs_through_them() {
+fn holds_push_later_voiceover_back_and_music_runs_through_them_to_the_end_screen() {
     use MediaRole::*;
     let links = Links {
         links: vec![
@@ -384,7 +384,7 @@ fn holds_push_later_voiceover_back_and_music_runs_through_them() {
     let at = |id: &str| plan.items.iter().find(|i| i.cue_id == id).map(|i| (i.start_frame, i.duration_frames));
     assert_eq!(at("k1"), Some((0, 300)));
     assert_eq!(at("k2"), Some((420, 90)), "Chapter One starts after the 120-frame hold");
-    assert_eq!(at("k3"), Some((0, 1110)), "music runs through the hold and the 600-frame end");
+    assert_eq!(at("k3"), Some((0, 510)), "music runs through the hold, up to the end screen");
     let t = Timing::new(&script, &links, &media, TB, &Heard::new(), &holds);
     assert_eq!(t.sections(&script).iter().map(|s| s.1).collect::<Vec<_>>(), [0, 420]);
     assert_eq!((t.holds(), t.tail(), t.end()), (vec![(300, 120)], Some((510, 600)), 510));
