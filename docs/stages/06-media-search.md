@@ -12,5 +12,10 @@ Run the auto loop from the skill until every LIVE cue is linked:
 The script links, reuses library clips and writes production/media-report.md; don't call
 links_add/links_list yourself. Follow the channel's media rules in production.md.
 
+Sources: pool.py searches the trusted channels in the library's channels.json first and
+never uses a watermark channel. On each contact sheet, if every clip is clean add
+`--trust BATCH` to the commit; if any frame shows a channel logo or watermark, use
+`--watermark BATCH` instead (rejects the source and blocks the channel for good).
+
 Report the final line of `pool.py status`, sources rejected, and anything left unfilled.
 ````

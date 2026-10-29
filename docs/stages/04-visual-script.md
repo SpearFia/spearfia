@@ -16,9 +16,15 @@ You plan the visuals for the current Spear Fia project (MCP server "spearfia").
    - "match": subject (default) or mood. Use exact only for show moments, where the
      sentence describes a concrete event the viewer should see (about 5-10% of cues);
      only those get a specific VISUAL line.
-   - "Search": raw-dump phrases first ("<game> all cinematics", "<game> all cutscenes 4k
-     no commentary"); for gameplay or background pools, "<game> full walkthrough gameplay
-     no commentary 4k".
+   - "Search": a compilation, never a single player's gameplay: "<game> all cutscenes"
+     or "<game> all cinematics"; for an unreleased game, its official trailer by full title
+     ("Grand Theft Auto VI trailer"). For a movie or TV character, the film's title plus the
+     scene ("John Wick Chapter 4 fight scene"). Don't search for a game mechanic ("5 star
+     wanted level", "boss fight", "rampage"): that finds one player's session or a challenge
+     video, and the whole pool becomes one room. Name the game exactly, spin-offs included
+     only when meant ("Vice City", not "Vice City Stories").
+   - "Footage": film for a movie or TV character's pool (searches the film channels),
+     otherwise leave it out (game is the default).
 3. Text, numbers and comparisons: method "Generated artwork" with the exact on-screen text.
 4. Write one thumbnail concept and three title options in packaging.md style, as a
    Production note at the top of the Visual Script.
