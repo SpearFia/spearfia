@@ -29,9 +29,18 @@ pub enum Where {
 pub enum Action {
     Zoom(String),
     /// `None` text: the generated cue's on-screen text.
-    Card { text: Option<String>, seconds: Option<f64> },
-    Transition { effect: String, seconds: f64 },
-    Sfx { name: String, db: Option<f64> },
+    Card {
+        text: Option<String>,
+        seconds: Option<f64>,
+    },
+    Transition {
+        effect: String,
+        seconds: f64,
+    },
+    Sfx {
+        name: String,
+        db: Option<f64>,
+    },
     Marker(String),
 }
 
@@ -71,7 +80,19 @@ pub struct Style {
 
 /// The keys of each style section that the push applies.
 const APPLIED: &[(&str, &[&str])] = &[
-    ("captions", &["enabled", "font", "size", "color", "outline", "max_chars", "margin", "position"]),
+    (
+        "captions",
+        &[
+            "enabled",
+            "font",
+            "size",
+            "color",
+            "outline",
+            "max_chars",
+            "margin",
+            "position",
+        ],
+    ),
     ("mix", &["enabled", "music_db", "sfx_db", "picture_db"]),
 ];
 
@@ -96,7 +117,9 @@ fn not_applied(v: &serde_json::Value) -> Vec<String> {
                     .map(|(key, _)| format!("{k}.{key}")),
             ),
             Some(_) => {}
-            None if !["spec_version", "recipes", "edit"].contains(&k.as_str()) => out.push(k.clone()),
+            None if !["spec_version", "recipes", "edit"].contains(&k.as_str()) => {
+                out.push(k.clone())
+            }
             None => {}
         }
     }
@@ -121,7 +144,8 @@ pub struct Captions {
 impl Captions {
     /// The bottom margin FilmCraft gets.
     pub fn bottom_margin(&self) -> f64 {
-        self.position.map_or(self.margin, |p| (1.0 - p[1]).clamp(0.0, 0.45))
+        self.position
+            .map_or(self.margin, |p| (1.0 - p[1]).clamp(0.0, 0.45))
     }
 }
 
@@ -240,7 +264,11 @@ impl Rules {
     pub fn holds(&self, tb: spearfia_core::project::Timebase) -> crate::Holds {
         let frames = |s: f64| (s * f64::from(tb.num) / f64::from(tb.den)).round() as u64;
         crate::Holds {
-            after: self.intro.iter().map(|i| (i.after.clone(), frames(i.seconds))).collect(),
+            after: self
+                .intro
+                .iter()
+                .map(|i| (i.after.clone(), frames(i.seconds)))
+                .collect(),
             end: self.end_screen.as_ref().map_or(0, |e| frames(e.seconds)),
         }
     }
@@ -304,8 +332,14 @@ pub fn style(brief: &str) -> Result<Option<Style>, String> {
 /// top-level key, so one video can change its rules without touching the approved channel
 /// brief. The flag says whether either had a block.
 pub fn merged_style(brief: Option<&str>, edit_md: Option<&str>) -> Result<(Style, bool), String> {
-    let base = brief.map(|b| style_block(b, "execution.md")).transpose()?.flatten();
-    let over = edit_md.map(|e| style_block(e, "edit.md")).transpose()?.flatten();
+    let base = brief
+        .map(|b| style_block(b, "execution.md"))
+        .transpose()?
+        .flatten();
+    let over = edit_md
+        .map(|e| style_block(e, "edit.md"))
+        .transpose()?
+        .flatten();
     let found = base.is_some() || over.is_some();
     let mut v = base.unwrap_or_else(|| serde_json::json!({}));
     if let (Some(o), Some(map)) = (over.as_ref().and_then(|o| o.as_object()), v.as_object_mut()) {
@@ -315,7 +349,15 @@ pub fn merged_style(brief: Option<&str>, edit_md: Option<&str>) -> Result<(Style
     }
     let skipped = not_applied(&v);
     serde_json::from_value(v)
-        .map(|s: Style| (Style { not_applied: skipped, ..s }, found))
+        .map(|s: Style| {
+            (
+                Style {
+                    not_applied: skipped,
+                    ..s
+                },
+                found,
+            )
+        })
         .map_err(|e| format!("spearfia-style: {e}"))
 }
 
@@ -331,7 +373,10 @@ fn split_quoted(s: &str, sep: char) -> Vec<&str> {
         }
     }
     out.push(&s[start..]);
-    out.into_iter().map(str::trim).filter(|t| !t.is_empty()).collect()
+    out.into_iter()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect()
 }
 
 fn unquote(s: &str) -> Option<&str> {
@@ -343,7 +388,10 @@ pub fn parse_action(s: &str) -> Result<Action, String> {
     let t = split_quoted(s, ' ');
     let num = |i: usize| -> Result<Option<f64>, String> {
         t.get(i)
-            .map(|v| v.parse::<f64>().map_err(|_| format!("`{v}` is not a number in `{s}`")))
+            .map(|v| {
+                v.parse::<f64>()
+                    .map_err(|_| format!("`{v}` is not a number in `{s}`"))
+            })
             .transpose()
     };
     let text = |i: usize| t.get(i).and_then(|v| unquote(v)).map(str::to_string);
@@ -355,20 +403,39 @@ pub fn parse_action(s: &str) -> Result<Action, String> {
                 Some(x) => (Some(x), 2),
                 None => (None, 1),
             };
-            Action::Card { text, seconds: num(at)? }
+            Action::Card {
+                text,
+                seconds: num(at)?,
+            }
         }
         Some("transition") if (2..=3).contains(&t.len()) => {
             let effect = match t[1] {
                 "dissolve" | "cross-dissolve" => "cross_dissolve",
                 "dip-to-black" => "dip_to_black",
                 "dip-to-white" => "dip_to_white",
-                other => return Err(format!("unknown transition `{other}` (dissolve, dip-to-black, dip-to-white)")),
+                other => {
+                    return Err(format!(
+                        "unknown transition `{other}` (dissolve, dip-to-black, dip-to-white)"
+                    ));
+                }
             };
-            Action::Transition { effect: effect.into(), seconds: num(2)?.unwrap_or(0.5) }
+            Action::Transition {
+                effect: effect.into(),
+                seconds: num(2)?.unwrap_or(0.5),
+            }
         }
-        Some("sfx") if (2..=3).contains(&t.len()) => Action::Sfx { name: t[1].to_string(), db: num(2)? },
-        Some("marker") if t.len() == 2 => Action::Marker(text(1).ok_or(format!("marker text needs quotes: `{s}`"))?),
-        _ => return Err(format!("unknown action `{s}` (zoom, card, transition, sfx, marker)")),
+        Some("sfx") if (2..=3).contains(&t.len()) => Action::Sfx {
+            name: t[1].to_string(),
+            db: num(2)?,
+        },
+        Some("marker") if t.len() == 2 => {
+            Action::Marker(text(1).ok_or(format!("marker text needs quotes: `{s}`"))?)
+        }
+        _ => {
+            return Err(format!(
+                "unknown action `{s}` (zoom, card, transition, sfx, marker)"
+            ));
+        }
     };
     Ok(a)
 }
@@ -380,31 +447,47 @@ fn parse_where(s: &str) -> Result<Where, String> {
             .ok_or(format!("section name needs quotes: `{s}`"));
     }
     let (q, line) = match s.rsplit_once('@') {
-        Some((q, l)) if l.trim().parse::<usize>().is_ok() => (q.trim(), l.trim().parse().unwrap_or(0)),
+        Some((q, l)) if l.trim().parse::<usize>().is_ok() => {
+            (q.trim(), l.trim().parse().unwrap_or(0))
+        }
         _ => (s, 0),
     };
     unquote(q)
         .filter(|q| !q.trim().is_empty())
-        .map(|q| Where::Words { quote: q.to_string(), line })
-        .ok_or(format!("where must be `section \"…\"` or `\"exact words\"[@line]`: `{s}`"))
+        .map(|q| Where::Words {
+            quote: q.to_string(),
+            line,
+        })
+        .ok_or(format!(
+            "where must be `section \"…\"` or `\"exact words\"[@line]`: `{s}`"
+        ))
 }
 
 /// Every `- where | action | …` line of an edit script, and what couldn't be read.
 pub fn parse(text: &str) -> (Vec<EditLine>, Vec<String>) {
     let (mut lines, mut problems) = (Vec::new(), Vec::new());
     for (i, raw) in text.lines().enumerate() {
-        let Some(body) = raw.trim().strip_prefix("- ") else { continue };
+        let Some(body) = raw.trim().strip_prefix("- ") else {
+            continue;
+        };
         let parts = split_quoted(body, '|');
         let result = parts
             .first()
             .ok_or_else(|| "empty line".to_string())
             .and_then(|w| parse_where(w))
             .and_then(|at| {
-                let actions = parts[1..].iter().map(|a| parse_action(a)).collect::<Result<Vec<_>, _>>()?;
+                let actions = parts[1..]
+                    .iter()
+                    .map(|a| parse_action(a))
+                    .collect::<Result<Vec<_>, _>>()?;
                 if actions.is_empty() {
                     return Err("no action".into());
                 }
-                Ok(EditLine { line: i + 1, at, actions })
+                Ok(EditLine {
+                    line: i + 1,
+                    at,
+                    actions,
+                })
             });
         match result {
             Ok(l) => lines.push(l),
@@ -434,7 +517,10 @@ pub fn resolve(
             Where::Words { quote, line } => timing.frame_of(quote, *line),
         };
         let Some(frame) = frame else {
-            problems.push(format!("edit.md:{}: {:?} is not in the script", l.line, l.at));
+            problems.push(format!(
+                "edit.md:{}: {:?} is not in the script",
+                l.line, l.at
+            ));
             continue;
         };
         for a in &l.actions {
@@ -442,11 +528,19 @@ pub fn resolve(
                 problems.push(format!("edit.md:{}: card needs its text here", l.line));
                 continue;
             }
-            ops.push(Op { frame, action: a.clone(), from: format!("edit.md:{}", l.line) });
+            ops.push(Op {
+                frame,
+                action: a.clone(),
+                from: format!("edit.md:{}", l.line),
+            });
         }
     }
     for r in &style.edit.rules {
-        let actions: Vec<Action> = match split_quoted(&r.actions, '|').into_iter().map(parse_action).collect() {
+        let actions: Vec<Action> = match split_quoted(&r.actions, '|')
+            .into_iter()
+            .map(parse_action)
+            .collect()
+        {
             Ok(a) => a,
             Err(e) => {
                 problems.push(format!("rule on {}: {e}", r.on));
@@ -474,14 +568,27 @@ pub fn resolve(
         for (frame, cue) in targets {
             for a in &actions {
                 let action = match (a, cue) {
-                    (Action::Card { text: None, seconds }, Some(c)) if !c.text.trim().is_empty() => {
-                        Action::Card { text: Some(c.text.clone()), seconds: *seconds }
-                    }
+                    (
+                        Action::Card {
+                            text: None,
+                            seconds,
+                        },
+                        Some(c),
+                    ) if !c.text.trim().is_empty() => Action::Card {
+                        text: Some(c.text.clone()),
+                        seconds: *seconds,
+                    },
                     (Action::Card { text: None, .. }, _) => continue,
                     _ => a.clone(),
                 };
-                let from = cue.map_or(format!("rule {}", r.on), |c| format!("rule {} {}", r.on, c.id));
-                ops.push(Op { frame, action, from });
+                let from = cue.map_or(format!("rule {}", r.on), |c| {
+                    format!("rule {} {}", r.on, c.id)
+                });
+                ops.push(Op {
+                    frame,
+                    action,
+                    from,
+                });
             }
         }
     }
@@ -518,7 +625,8 @@ mod tests {
     use spearfia_core::project::{MediaRole, Timebase};
     use std::collections::BTreeMap;
 
-    const SCRIPT: &str = "## Cold Open\nVO: one two three four\n## Round 1\nVO: five six seven eight\n";
+    const SCRIPT: &str =
+        "## Cold Open\nVO: one two three four\n## Round 1\nVO: five six seven eight\n";
 
     #[test]
     fn edit_lines_parse_and_report_problems() {
@@ -530,9 +638,21 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(
             lines[1].actions,
-            [Action::Zoom("punch-in".into()), Action::Card { text: Some("SIX | SEVEN".into()), seconds: Some(2.0) }]
+            [
+                Action::Zoom("punch-in".into()),
+                Action::Card {
+                    text: Some("SIX | SEVEN".into()),
+                    seconds: Some(2.0)
+                }
+            ]
         );
-        assert_eq!(lines[1].at, Where::Words { quote: "six seven".into(), line: 4 });
+        assert_eq!(
+            lines[1].at,
+            Where::Words {
+                quote: "six seven".into(),
+                line: 4
+            }
+        );
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems[0].starts_with("edit.md:4: unknown action"));
     }
@@ -544,31 +664,69 @@ mod tests {
             id: "k1".into(),
             quote: "one two three four".into(),
             line: 2,
-            media: LinkMedia { path: "vo.wav".into(), hash: None },
+            media: LinkMedia {
+                path: "vo.wav".into(),
+                hash: None,
+            },
             role: MediaRole::Voiceover,
             kind: LinkKind::for_role(MediaRole::Voiceover),
             in_point: None,
             out_point: None,
         };
-        let links = Links { links: vec![vo], next_id: 2, unreadable: vec![] };
+        let links = Links {
+            links: vec![vo],
+            next_id: 2,
+            unreadable: vec![],
+        };
         let media = BTreeMap::from([("vo.wav".to_string(), Some(240))]);
-        let timing = Timing::new(&script, &links, &media, Timebase::FPS_30, &Heard::new(), &crate::Holds::default());
+        let timing = Timing::new(
+            &script,
+            &links,
+            &media,
+            Timebase::FPS_30,
+            &Heard::new(),
+            &crate::Holds::default(),
+        );
         let style: Style = serde_json::from_value(serde_json::json!({
             "edit": {"rules": [{"on": "section", "do": "transition dip-to-black 0.5"},
                                {"on": "generated", "do": "card | sfx impact"}]}
         }))
         .unwrap();
-        let (lines, _) = parse("- \"seven\" | zoom punch-in\n- \"missing words\" | zoom punch-in\n");
-        let generated = [GeneratedCue { id: "c1".into(), quote: "six".into(), line: 4, text: "SIX".into() }];
+        let (lines, _) =
+            parse("- \"seven\" | zoom punch-in\n- \"missing words\" | zoom punch-in\n");
+        let generated = [GeneratedCue {
+            id: "c1".into(),
+            quote: "six".into(),
+            line: 4,
+            text: "SIX".into(),
+        }];
         let (ops, problems) = resolve(&lines, &style, &generated, &timing, &script);
         // 8 words over 240 frames: "five" (Round 1) at 120, "six" at 150, "seven" at 180.
         let got: Vec<(u64, &Action)> = ops.iter().map(|o| (o.frame, &o.action)).collect();
         assert_eq!(
             got,
             [
-                (120, &Action::Transition { effect: "dip_to_black".into(), seconds: 0.5 }),
-                (150, &Action::Card { text: Some("SIX".into()), seconds: None }),
-                (150, &Action::Sfx { name: "impact".into(), db: None }),
+                (
+                    120,
+                    &Action::Transition {
+                        effect: "dip_to_black".into(),
+                        seconds: 0.5
+                    }
+                ),
+                (
+                    150,
+                    &Action::Card {
+                        text: Some("SIX".into()),
+                        seconds: None
+                    }
+                ),
+                (
+                    150,
+                    &Action::Sfx {
+                        name: "impact".into(),
+                        db: None
+                    }
+                ),
                 (180, &Action::Zoom("punch-in".into())),
             ]
         );
@@ -583,7 +741,10 @@ mod tests {
         assert!(s.captions.enabled && s.captions.font == "Impact" && s.captions.max_chars == 32);
         assert_eq!(s.captions.bottom_margin(), 0.1);
         assert_eq!(s.recipes[0].scale(), Some((100.0, 118.0)));
-        assert_eq!(cue_text("TEXT: FIVE\nGRAPHIC: x\nTEXT: FOR GERALT\n"), "FIVE\nFOR GERALT");
+        assert_eq!(
+            cue_text("TEXT: FIVE\nGRAPHIC: x\nTEXT: FOR GERALT\n"),
+            "FIVE\nFOR GERALT"
+        );
         assert!(style("no block").unwrap().is_none());
         let edit = "```spearfia-style\n{\"edit\": {\"rules\": [{\"on\": \"section\", \"do\": \"marker \\\"x\\\"\"}]}}\n```";
         let (m, found) = merged_style(Some(brief), Some(edit)).unwrap();
@@ -603,7 +764,10 @@ mod tests {
  \"captions\": {\"enabled\": true, \"font\": \"Impact\", \"accent\": \"#E3262B\", \"emphasis\": [], \"pop_ms\": 120},
  \"mix\": {\"enabled\": true, \"music_db\": -16, \"voice_db\": 0, \"duck_db\": -6}}
 ```";
-        assert_eq!(style(brief).unwrap().unwrap().not_applied, ["captions.accent", "captions.pop_ms", "mix.duck_db", "music"]);
+        assert_eq!(
+            style(brief).unwrap().unwrap().not_applied,
+            ["captions.accent", "captions.pop_ms", "mix.duck_db", "music"]
+        );
         let off = "```spearfia-style\n{\"mix\": {\"enabled\": false, \"duck_db\": -6}}\n```";
         assert!(style(off).unwrap().unwrap().not_applied.is_empty());
     }

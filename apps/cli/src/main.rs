@@ -199,7 +199,9 @@ fn run(cli: &Cli) -> Result<(), String> {
             filmstrips,
         } => {
             let project = open(folder)?;
-            let opts = spearfia_adapter_filmcraft::Options { filmstrips: *filmstrips };
+            let opts = spearfia_adapter_filmcraft::Options {
+                filmstrips: *filmstrips,
+            };
             let fc = spearfia_adapter_filmcraft::find_cli()
                 .and_then(|cli| spearfia_adapter_filmcraft::push_with(&project, &cli, &opts))
                 .map_err(|e| e.to_string())?;

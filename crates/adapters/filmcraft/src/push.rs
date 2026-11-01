@@ -187,7 +187,8 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let heard = heard(project);
     let edit_md = std::fs::read_to_string(project.root.join("edit").join("edit.md")).ok();
     let brief = project.channel_brief()?;
-    let (style, _) = edit::merged_style(brief.as_deref(), edit_md.as_deref()).map_err(CoreError::Invalid)?;
+    let (style, _) =
+        edit::merged_style(brief.as_deref(), edit_md.as_deref()).map_err(CoreError::Invalid)?;
     // The intro and end screen need time with no narration.
     let holds = style.edit.holds(tb);
     let (mut plan, issues) = compile_heard(&script, &links, &media, tb, &heard, &holds);
@@ -226,7 +227,10 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         clips.insert(&it.cue_id, clip);
         // The same span's own sound on A4 (an audio track takes a video file's sound alone),
         // so it gets its own fader; stills have no length and no sound.
-        if picture_sound && it.track.starts_with('V') && media.get(&src.path).is_some_and(Option::is_some) {
+        if picture_sound
+            && it.track.starts_with('V')
+            && media.get(&src.path).is_some_and(Option::is_some)
+        {
             let placed = fc.command(
                 "timeline.place",
                 json!({"item": item, "track": "A4", "frame": it.start_frame,
@@ -249,7 +253,10 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         .filter_map(|i| clips.get(i.cue_id.as_str()).copied())
         .collect();
     if !pictures.is_empty() {
-        fc.command("timeline.select", json!({"clips": pictures, "add": false, "toggle": false}))?;
+        fc.command(
+            "timeline.select",
+            json!({"clips": pictures, "add": false, "toggle": false}),
+        )?;
         fc.command("clip.scaleToFrameSize", json!({}))?;
         fc.command("edit.deselectAll", json!({}))?;
     }
@@ -294,14 +301,31 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     // Every operation with its time, for revising edit.md without reading the timeline.
     let listing: String = ops
         .iter()
-        .map(|o| format!("{}  {:<28} {:?}
-", clock(o.frame, tb), o.from, o.action))
+        .map(|o| {
+            format!(
+                "{}  {:<28} {:?}
+",
+                clock(o.frame, tb),
+                o.from,
+                o.action
+            )
+        })
         .collect();
     let size = [settings.resolution[0], settings.resolution[1]];
-    let mut done = apply::apply(&mut fc, project, &plan, &clips, &style, &ops, &timing.holds(), tb, size);
+    let mut done = apply::apply(
+        &mut fc,
+        project,
+        &plan,
+        &clips,
+        &style,
+        &ops,
+        &timing.holds(),
+        tb,
+        size,
+    );
     applied.ops = done.ops;
     problems.append(&mut done.problems);
-    let mut extras = apply::extras(&mut fc, project, &style, &timing, &project.name(), tb, size);
+    let mut extras = apply::extras(&mut fc, project, &style, &timing, project.name(), tb, size);
     problems.append(&mut extras.problems);
     done.cards.append(&mut extras.cards);
     let video_end = timing.tail().map_or(timing.end(), |(at, len)| at + len);
@@ -320,7 +344,10 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         if let Some(db) = style.mix.picture_db
             && db != 0.0
             && !sounds.is_empty()
-            && let Err(e) = fc.command("clip.audioGain", json!({"clips": sounds, "mode": "set", "db": db}))
+            && let Err(e) = fc.command(
+                "clip.audioGain",
+                json!({"clips": sounds, "mode": "set", "db": db}),
+            )
         {
             problems.push(format!("mix A4: {e}"));
         }
@@ -330,12 +357,20 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let mut not_applied = style.not_applied.clone();
     if style.mix.enabled {
         // `sfx` edit lines and the intro's sfx also land on A3, outside the plan.
-        let edit_sfx = ops.iter().any(|o| matches!(o.action, edit::Action::Sfx { .. }))
+        let edit_sfx = ops
+            .iter()
+            .any(|o| matches!(o.action, edit::Action::Sfx { .. }))
             || style.edit.intro.as_ref().is_some_and(|i| i.sfx.is_some());
-        for (track, key, db) in [("A2", "mix.music_db", style.mix.music_db), ("A3", "mix.sfx_db", style.mix.sfx_db)] {
+        for (track, key, db) in [
+            ("A2", "mix.music_db", style.mix.music_db),
+            ("A3", "mix.sfx_db", style.mix.sfx_db),
+        ] {
             if db != 0.0
                 && !(track == "A3" && edit_sfx)
-                && !plan.items.iter().any(|i| i.kind == Kind::Clip && i.track == track)
+                && !plan
+                    .items
+                    .iter()
+                    .any(|i| i.kind == Kind::Clip && i.track == track)
             {
                 not_applied.push(format!("{key} (nothing on {track})"));
             }
@@ -344,7 +379,11 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
     let words = timing.words();
     let untimed = |p: &str| heard.get(p).is_none_or(Vec::is_empty);
     let voice: BTreeSet<&str> = words.iter().map(|w| w.path.as_str()).collect();
-    let untimed_voice: Vec<String> = voice.iter().filter(|p| untimed(p)).map(|p| p.to_string()).collect();
+    let untimed_voice: Vec<String> = voice
+        .iter()
+        .filter(|p| untimed(p))
+        .map(|p| p.to_string())
+        .collect();
 
     let mut starts = timing.sections(&script);
     let tail = timing.tail();
@@ -370,12 +409,18 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
                 start: *start,
                 end,
                 picture_gap: (end - start).saturating_sub(covered),
-                edits: ops.iter().filter(|o| o.frame >= *start && o.frame < end).count(),
+                edits: ops
+                    .iter()
+                    .filter(|o| o.frame >= *start && o.frame < end)
+                    .count(),
                 untimed_words: words
                     .iter()
                     .filter(|w| w.start >= *start && w.start < end && untimed(&w.path))
                     .count(),
-                checks: checks.iter().filter(|(f, _)| f >= start && *f < end).count(),
+                checks: checks
+                    .iter()
+                    .filter(|(f, _)| f >= start && *f < end)
+                    .count(),
             }
         })
         .collect();
@@ -394,10 +439,16 @@ pub fn push_with(project: &Project, cli: &Path, opts: &Options) -> Result<Pushed
         &sync.join("snapshots").join(format!("{plan_id}.json")),
         &snapshot,
     )?;
-    let _ = std::fs::write(sync.join("plans").join(format!("{plan_id}.edit.txt")), listing);
+    let _ = std::fs::write(
+        sync.join("plans").join(format!("{plan_id}.edit.txt")),
+        listing,
+    );
     let mut filmstrips = Vec::new();
     if opts.filmstrips {
-        let spans: Vec<_> = sections.iter().map(|s| (s.title.clone(), s.start, s.end)).collect();
+        let spans: Vec<_> = sections
+            .iter()
+            .map(|s| (s.title.clone(), s.start, s.end))
+            .collect();
         let dir = sync.join("filmstrips").join(&plan_id);
         let (sheets, mut p) = apply::filmstrips(&mut fc, &dir, &spans, 6, tb);
         filmstrips = sheets;

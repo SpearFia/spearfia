@@ -261,8 +261,12 @@ fn is_voice_tag(token: &str) -> bool {
 #[cfg(test)]
 #[test]
 fn voice_tags_are_not_words() {
-    let w: Vec<&str> = words_in("[excited] Round one goes to [Geralt] [curious], really [ON").collect();
-    assert_eq!(w, ["Round", "one", "goes", "to", "[Geralt]", "really", "[ON"]);
+    let w: Vec<&str> =
+        words_in("[excited] Round one goes to [Geralt] [curious], really [ON").collect();
+    assert_eq!(
+        w,
+        ["Round", "one", "goes", "to", "[Geralt]", "really", "[ON"]
+    );
 }
 
 /// The words of a text segment: whitespace-separated, skipping formatting-only tokens.
