@@ -21,7 +21,8 @@ test('decisions reject stale contexts, missing alternatives and invalid probabil
   const parsed=SceneSchema.parse(scene),p=decisionPacket(parsed);
   assert.notEqual(p.hash,decisionPacket(parsed,{narration:'Different surrounding beat',neighbors:[]}).hash);
   const probabilities={'comparison':0.96,'plain-hold':0.03,'none-of-these':0.01};
-  assert.equal(assessChoice(p,{hash:p.hash,probabilities}).eligible,true);
+  assert.equal(assessChoice(p,{hash:p.hash,probabilities}).thresholdEligible,true);
+  assert.equal(assessChoice(p,{hash:p.hash,probabilities}).eligible,false);
   assert.equal(assessChoice(p,{hash:p.hash,probabilities}).applied,false);
   assert.throws(() => assessChoice(p,{hash:'old',probabilities}));
   assert.throws(() => assessChoice(p,{hash:p.hash,probabilities:{comparison:1}}));

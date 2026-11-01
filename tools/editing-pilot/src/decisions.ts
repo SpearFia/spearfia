@@ -25,6 +25,6 @@ export function assessChoice(packet: ReturnType<typeof decisionPacket>, result: 
   if (Math.abs(Object.values(r.probabilities).reduce((a, b) => a + b, 0) - 1) > 0.001) throw new Error('Probabilities must sum to one');
   const ranked = Object.entries(r.probabilities).sort((a, b) => b[1] - a[1]);
   return {choice: ranked[0][0], probability: ranked[0][1], margin: ranked[0][1] - ranked[1][1],
-    eligible: ranked[0][0] !== 'none-of-these' && ranked[0][1] >= 0.95 && ranked[0][1] - ranked[1][1] >= 0.20,
-    applied: false, reason: 'Shadow only; calibration and creator review still required'};
+    thresholdEligible: ranked[0][0] !== 'none-of-these' && ranked[0][1] >= 0.95 && ranked[0][1] - ranked[1][1] >= 0.20,
+    eligible: false, applied: false, reason: 'Shadow only; evidence and calibration have not been verified'};
 }

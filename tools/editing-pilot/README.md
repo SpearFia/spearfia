@@ -81,7 +81,17 @@ Rendering saves hash-addressed outputs and verification records, reuses verified
 
 `filmcraft.py` creates a **separate**, hash-addressed `filmcraft-<hash>/editing-audition.fcproj` through the installed FilmCraft CLI, then reopens it to verify track counts, timing, gain and duration. V1 contains individual prepared shot segments, V2 contains three rendered inserts, A1 is narration, A2 is music, A3 onward holds individual sound cues, and C1 contains editable draft captions. Overlapping sound tails get separate tracks so placing one effect cannot cut off another. The inserts' internal shapes and text are editable in Remotion via `pilot.json`; rerun the command after changes to create a new audition. The original source handles and any brief holds remain recorded in `prepared.json`. Existing audition directories are preserved; a matching verified project is reused.
 
-`clef-packets.json` contains contextual choices with “none of these”, candidate/context hashes and criteria. `src/decisions.ts` validates returned distributions and reports provisional threshold eligibility. It **never applies** a choice: no Clef endpoint or calibration is assumed. Writing and rendering invoke no LLM. A live adapter and independently verified clip selection remain later work.
+`clef-packets.json` contains contextual choices with “none of these”, candidate/context hashes and criteria. `src/decisions.ts` validates returned distributions and reports provisional threshold eligibility. It **never applies** a choice: calibration is not assumed. Writing and rendering invoke no LLM. A live adapter and independently verified clip selection remain later work.
+
+`clef_service.py` is an experimental loopback-only SystemOne server for the pinned
+Clef release. In the isolated WSL environment, download revision
+`fb4417d31c1d0f9e7e77f1141b40aaede7491e00` into the Hugging Face cache before
+starting `/opt/clef/bin/python /mnt/c/dev/spearfia/spearfia/tools/editing-pilot/clef_service.py`.
+It loads the backbone with NF4/BF16 and the native decision head, and rejects a
+context that would be truncated. `src/clef.ts` can submit complete pilot packets
+and cache advisory results by context and model revision; it is not yet wired
+into a preview command. No automatic edits or model-quality claims follow from
+installing it.
 
 ## Checks
 
