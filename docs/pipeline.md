@@ -22,7 +22,7 @@ version agents should follow; update it when the plan changes.
 | 7 | Media search | Footage and images per cue, linked to words | MCP `links_add`; Visual Script references | Linking built; search skill missing |
 | 8 | Assembly | A FilmCraft review timeline | Sync stage, MCP `timeline_push`, `spearfia push filmcraft` | One-way push built; pull missing |
 | 9 | Music and SFX | Beds and effects on their own tracks | `audio-gen` skill (ComfyUI, Stable Audio 3); `music`/`sfx` folder roles → A2/A3 | Built (generation tested) |
-| 9b | Channel-style edit | Transitions, captions, camera moves | Catalog recipes and looks (planned) | Missing |
+| 9b | Channel-style edit | Transitions, captions, camera moves | Catalog recipes and looks (planned); optional [Remotion audition](../tools/editing-pilot/README.md) | Isolated pilot; production integration missing |
 | 10 | Thumbnail and description | Finished thumbnail and description | None (PhotoCraft or ComfyUI) | External |
 | 11 | Review and lessons | Creator review; dated notes in `lessons.md` | Channel guides | Manual |
 
@@ -107,6 +107,7 @@ publishes.
 - Editing style from the DNA should become recipes or looks the editing agent applies,
   not prose it interprets.
 - Sound effects may come from ComfyUI with Stable Audio.
+- The optional [editing treatment pilot](../tools/editing-pilot/README.md) reads approved production inputs and a saved plan, then builds a separate audition with progressive cards, comparisons, narration context and synchronized sound. It leaves the source project unchanged. Clef choices are shadow-only; treatment approval, asset verification and a final listening review remain with the creator.
 
 ## Agent assignments
 

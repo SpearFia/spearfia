@@ -1,0 +1,5 @@
+node_modules/
+.remotion/
+public/
+out/
+__pycache__/
