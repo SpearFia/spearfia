@@ -17,6 +17,15 @@ def command(command_id, **params):
     return dict(id=command_id, params=params)
 
 
+def native_caption_groups(p):
+    if not p.get('wordCaptions'):
+        return p['captions']
+    if not p.get('captionPages'):
+        raise ValueError('Script words require a shared caption page plan')
+    return [dict(start=math.floor(c['startMs']/1000*FPS+.5),
+                 end=min(p['duration'],math.floor(c['endMs']/1000*FPS+.5)),text=c['text']) for c in p['captionPages']]
+
+
 def sound_tracks(sounds):
     ends, scheduled = [], []
     for s in sorted(sounds, key=lambda s:s['target']-s['transient']):
@@ -51,6 +60,7 @@ def export(folder):
     if any((p/'.git').exists() for p in [folder, *folder.parents]):
         raise ValueError('Audition must stay outside Git')
     p, prepared = read(folder/'pilot.json'), read(folder/'prepared.json')
+    p['captions']=native_caption_groups(p)
     if p['fps'] != FPS or p['duration'] != prepared['duration_frames']:
         raise ValueError('Pilot and preparation differ')
     assets = (folder/'assets').resolve()
@@ -69,7 +79,7 @@ def export(folder):
     if sum(s['frames'] for s in prepared['picture']) != p['duration'] or not all(path.is_file() for path in picture):
         raise ValueError('Prepared picture segments do not cover the audition')
     fingerprint = hashlib.sha256(json.dumps(p, sort_keys=True).encode())
-    for path in [Path(__file__), ROOT/'src/Root.tsx', ROOT/'src/index.ts', ROOT/'src/model.ts', ROOT/'package-lock.json',
+    for path in [Path(__file__), *sorted(ROOT.glob('src/*.ts')), *sorted(ROOT.glob('src/*.tsx')), ROOT/'package-lock.json',
                  folder/'prepared.json', *picture, asset(p['baseline']), voice, *([music] if music else []), *sorted({asset(s['file']) for s in p['sounds']})]:
         fingerprint.update(sha(path).encode())
     work = folder/('filmcraft-'+fingerprint.hexdigest()[:16])
@@ -82,7 +92,7 @@ def export(folder):
         return
     work.mkdir()  # Preserve any interrupted audition for inspection.
     props = work/'insert-props.json'
-    save(props, dict(p, variant='restrained', captions=[], sounds=[]))
+    save(props, dict(p, variant='restrained', captions=[], wordCaptions=[], captionPages=[], sounds=[]))
     inserts = []
     for scene in p['scenes']:
         path = work/(scene['id']+'.mp4')
@@ -134,12 +144,14 @@ def export(folder):
         edits.append(command('clip.rename', clip=clips[0], name=name))
         if db is not None:
             edits.append(command('clip.audioGain', clips=clips, mode='set', db=db))
-    edits += [command('captions.newTrack', format='Subtitle', name='Draft ASR captions - review wording', language='en'),
-              command('captions.setStyle', track='C1', font='Arial', size=48, color='#FFFFFF', outline=1,
-                      outlineColor='#111111', background=True, backgroundColor='#000000BB', anchor='bottom', margin=.06)]
+    profile=p.get('profile',{})
+    edits += [command('captions.newTrack', format='Subtitle', name='Script-aligned captions - timing review' if p.get('wordCaptions') else 'Draft ASR captions - review wording', language='en'),
+              command('captions.setStyle', track='C1', font=profile.get('captionFont','Arial'), size=profile.get('captionSize',48), color=profile.get('ink','#FFFFFF'), outline=1,
+                      outlineColor='#111111', background=True, backgroundColor='#000000D6', anchor='bottom', margin=profile.get('captionBottom',65)/1080)]
     edits += [command('captions.add', track='C1', text=c['text'], time=c['start']*TICKS_PER_FRAME, durationSeconds=(c['end']-c['start'])/FPS) for c in p['captions']]
     edits += [command('markers.addRange', time=s['start']*TICKS_PER_FRAME, durationFrames=s['end']-s['start'], name=s['id'],
                       comment='Pending treatment review; graphics editable in pilot.json and Remotion.') for s in p['scenes']]
+    edits.append(command('captions.export',track='C1',path=str(work/'captions.srt'),format='srt'))
     destination = work/'editing-audition.fcproj'
     cli(edits, destination, placed)
     result = subprocess.run([str(CLI), '--compact', '--project', str(destination), 'inspect', 'sequence'],
@@ -160,10 +172,21 @@ def export(folder):
             raise ValueError('Saved clip timing or gain differs from the audition')
     if sequence['durationFrames'] != p['duration']:
         raise ValueError('Saved FilmCraft duration differs from the audition')
+    result = subprocess.run([str(CLI), '--compact', '--project', str(destination), 'exec', 'captions.list'],
+                            capture_output=True, text=True, encoding='utf-8', check=True, timeout=60)
+    caption_tracks=json.loads(result.stdout)
+    save(work/'caption-inspection.json',caption_tracks)
+    saved_captions=caption_tracks['tracks'][0]['captions']
+    if len(saved_captions)!=len(p['captions']):
+        raise ValueError('Saved caption count differs from the shared plan')
+    for actual, expected_caption in zip(saved_captions,p['captions']):
+        if actual['text']!=expected_caption['text'] or actual['start']!=expected_caption['start']*TICKS_PER_FRAME or actual['end']!=expected_caption['end']*TICKS_PER_FRAME:
+            raise ValueError('Saved caption text/timing differs from the shared plan')
     save(work/'verified.json', dict(project=str(destination), sha256=sha(destination), inserts={path.name:sha(path) for path in inserts}, duration_frames=sequence['durationFrames'], tracks=expected,
          approval='pending creator review', notes=['Prepared shot segments include documented holds; original source handles remain in prepared.json',
            'Remotion inserts are flattened picture layers; adjust labels and animation in pilot.json then rerender',
-           'Captions, voice, music and each sound cue remain separate; sound palette is an unapproved procedural audition']))
+           'Captions, voice, music and each sound cue remain separate; sound palette is an unapproved procedural audition',
+           'Native captions use clean editable phrases from the shared plan; animated word highlighting is available in Remotion reviews']))
     print('Verified separate FilmCraft audition:', destination, flush=True)
 
 

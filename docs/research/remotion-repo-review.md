@@ -8,6 +8,13 @@ install packages or run third-party code. Source copies and file manifests are u
 other secret files were opened. This is a source review, not a compatibility or visual
 quality benchmark. No dependency or production project changes were made.
 
+Follow-up: the creator requested incorporation. The [pilot](../../tools/editing-pilot/README.md)
+now has original kit-inspired motion presets, data-controlled channel appearance and
+script-aligned caption styles, with actual renders and focused tests. No community
+source was copied; official caption/layout utilities were added. The source-review
+findings below remain pinned historical observations. Production model selection and
+VideoJev integration are still incomplete.
+
 ## Decisions
 
 | Repository and inspected commit | Useful extraction | Adoption decision |

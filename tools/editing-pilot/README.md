@@ -11,6 +11,56 @@ and [community-source review](../../docs/research/remotion-repo-review.md). They
 VideoJev reuse, the shared/channel-specific boundary and the caption upgrade path;
 these are requirements, not integrations already present in the worker.
 
+## Upgraded motion and captions
+
+Four original motion presets implement the reviewed remotion-kit-style entrance/exit
+and stagger patterns: `slide-fade`, `pop`, `fade`, and `impact`. No unlicensed source
+was copied. Defaults are tested and rendered, pending creator approval. Channel
+profiles supply fonts, colors, caption sizing and motion intensity; episode inputs
+supply labels. `profiles/news-draft.json` is an illustrative calmer profile, not an
+approved CFB guide.
+
+```powershell
+npm run upgrade -- --from D:\SpearFia\pilots\editing-treatments-20261101-v2 --out D:\SpearFia\pilots\new-caption-audition
+npm run render -- --folder D:\SpearFia\pilots\new-caption-audition --caption-style active-word
+npm run render -- --folder D:\SpearFia\pilots\new-caption-audition --caption-style clean --frames 180-899 --scale 0.5
+npm run render -- --folder D:\SpearFia\pilots\new-caption-audition --caption-style emphasis --frames 180-899 --scale 0.5
+python filmcraft.py --folder D:\SpearFia\pilots\new-caption-audition
+```
+
+Requires Rust, Node and FFmpeg. `upgrade.ts` uses the read-only `spearfia-sync`
+`editing_words` example and production `Timing` aligner. It checks source approval
+and hashes, retains approved spelling, uses matched ASR end times and flags interpolation.
+It performs no new transcription or acoustic forced alignment. Uncertain words remain
+visible but receive no allegedly precise active-word highlight.
+
+The planner measures actual browser/font text widths, honors punctuation, pauses,
+protected phrases and negations, and merges short orphan tails that fit. Page validation
+checks complete ordered word coverage. Linguistic grouping still needs editorial review.
+`caption-plan.json`, SRT/VTT and native captions share the same plan. Native captions
+are clean editable phrases; animated word color/emphasis is available in Remotion.
+Graphic inserts contain no captions, preventing double display in FilmCraft.
+Word/page data is authoritative for upgraded inputs; native export and judgment
+context ignore a stale legacy caption snapshot. Each new native audition exports
+its own `captions.srt`. Top-level SRT/VTT files are preparation snapshots.
+
+Optional `--profile <JSON>` and `--caption-rules <JSON>` separate channel appearance
+and episode names/emphasis from the engine. See `profiles/news-draft.json` and
+`examples/john-wick-caption-rules.json`. Emphasis defaults to supplied scene labels;
+these are audition choices, not automatic editorial judgments.
+
+Upgraded configs add `profile`, scene `entrance`/`reveal`, optional item `motion`,
+`wordCaptions`, validated `captionPages` and `captionStyle`. Legacy configs remain
+readable. `--frames start-end` renders an inclusive audition range. All source modules,
+props, media and the range participate in cache keys. Templates intentionally use data
+controlled instances rather than a separate Studio source node per word.
+
+`editorial-context.json` supplies overlapping Visual Script cues, actual footage windows
+and fingerprints, narration and timing warnings to Clef's shadow packets. It explicitly
+records missing VideoJev evidence; no inference runs and no unrelated evidence is borrowed.
+The legacy preparation below still makes the original Star 4 input, then `upgrade`
+creates a separate richer audition while preserving the first.
+
 ## Prepare and review
 
 ```powershell
@@ -39,6 +89,7 @@ Rendering saves hash-addressed outputs and verification records, reuses verified
 npm test
 npm run check
 python -m unittest discover -s test -p "test_*.py"
+cargo test -p spearfia-sync
 ```
 
 Review actual picture and sound before approving any treatment. Technical checks do not establish editing quality, evidence truth or audience response.

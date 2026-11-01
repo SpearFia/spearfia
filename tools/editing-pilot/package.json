@@ -4,16 +4,22 @@
   "version": "0.1.0",
   "license": "MIT OR Apache-2.0",
   "type": "module",
-  "engines": {"node": ">=24"},
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "check": "tsc --noEmit",
-    "render": "node --experimental-strip-types render.ts"
+    "render": "node --experimental-strip-types render.ts",
+    "upgrade": "node --experimental-strip-types upgrade.ts"
   },
   "dependencies": {
+    "@remotion/captions": "4.0.538",
     "@remotion/cli": "4.0.538",
+    "@remotion/layout-utils": "4.0.538",
     "@remotion/media": "4.0.538",
+    "@remotion/renderer": "4.0.538",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "remotion": "4.0.538",

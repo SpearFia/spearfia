@@ -13,10 +13,10 @@ editor. No production approvals are granted by this document.
 | --- | --- | --- |
 | [Visual Script prompt](stages/04-visual-script.md) | Cues per beat/1-3 sentences; exact visual requirements, text and a small executable edit draft | Consistent purpose, reveal order, constraints and deliberate holds carried into editing |
 | [Visual Script](visual-script.md) | Stable cue IDs, exact narration anchors, references and `ACTION:`, `GRAPHIC:`, `CONTINUITY:` paragraphs | A compiler from that intent and actual visual evidence to richer treatment candidates |
-| `spearfia-sync::Timing` | Approved script words aligned to recorded ASR starts; timeline offsets and holds | Export/reuse by the optional Remotion worker; per-word timing-quality flags |
-| FilmCraft adapter captions | Approved script spelling at aligned times, with native caption output | Richer phrase grouping, word emphasis and matching channel presentation |
+| `spearfia-sync::Timing` | Approved script words aligned to ASR; read-only `editing_words` bridge for the worker | Acoustic verification of uncertain spans |
+| FilmCraft adapter captions | Script spelling at aligned times; upgraded worker shares phrase pages with native captions | Native animated word emphasis and production integration |
 | VideoJev workflow in the skills repository | Script-first beats, source groups, temporal grounding, choice checks and saved per-question results | An editing-side consumer of that evidence, tied to the actual selected footage |
-| [Remotion pilot](../tools/editing-pilot/README.md) | Three reusable treatments, parameter validation, transient-aligned sound and separate review output | Live calibrated Clef, shared channel profiles, verified visual context and production integration |
+| [Remotion pilot](../tools/editing-pilot/README.md) | Three treatments, four motion presets, appearance profiles, script-aligned caption styles and separate reviews | Live calibrated Clef, attached VideoJev observations and production integration |
 
 At inspection, the original John Wick project's Visual Script had 0 `ACTION:`
 paragraphs, despite 45 `GRAPHIC:` paragraphs. The formats can hold richer intent;
@@ -129,16 +129,17 @@ colors, treatment variants, pacing, permitted intensity, source presentation and
 palettes in channel profiles. Episode plans supply words, claims, sources and assets.
 CrazyWhatIfs and a CFB news channel can use the same comparison or caption engine with
 different styling and editorial policies. Never put a channel's heading or a video's
-specific narration phrase into the reusable engine. The pilot still does this and
-needs separation before general use.
+specific narration phrase into the reusable engine. The upgraded renderer accepts
+profiles and episode labels separately; the legacy Star 4 sampler is still episode-specific.
 
 ## Caption upgrade requirements
 
 The main pipeline already has script-correct words: `crates/sync/src/lib.rs` aligns
 script words to ASR using longest common subsequences, interpolating unmatched words.
 `crates/adapters/filmcraft/src/edit.rs` uses those words for native captions. The pilot
-instead groups raw ASR text by six words/32 characters. Reuse the main timing path;
-do not create a second transcription/alignment pipeline for each visual style.
+originally grouped raw ASR text by six words/32 characters. The optional `upgrade`
+path now reuses the main aligner and a measured phrase plan. Keep reusing that path;
+do not create another transcription/alignment pipeline for each visual style.
 
 Alignment is not acoustic forced alignment: interpolated words and end times inferred
 from the next word can include silence. Add explicit quality flags and pause handling;
@@ -153,8 +154,8 @@ at the render boundary. Preserve script word IDs and timings separately from sty
 Phrase grouping should respect punctuation, names, negations, pauses, measured width
 and reading time. ASR character limits alone are not a caption design.
 
-The next audition should compare a clean phrase style, a phrase style with active-word
-accent, and a restrained emphasis style on the same 20-30 seconds of narration. Keep
+The worker now supports a clean phrase style, active-word accent and restrained
+emphasis, auditioned on the same 24 seconds. Creator selection remains pending. Keep
 font weight stable, wrapping predictable, contrast legible and the caption area clear
 of graphics. A news channel can choose calmer presentation with the same data/engine.
 Use code for word highlighting and fit calculations. Clef may choose among supplied

@@ -11,6 +11,12 @@ import filmcraft
 
 
 class FilmCraftTests(unittest.TestCase):
+    def test_native_captions_derive_from_the_shared_pages_instead_of_a_stale_snapshot(self):
+        p={'duration':90,'wordCaptions':[{'id':1}],'captions':[{'text':'stale'}],
+           'captionPages':[{'startMs':1000,'endMs':1500,'text':'Approved words'}]}
+        self.assertEqual(filmcraft.native_caption_groups(p),[{'start':30,'end':45,'text':'Approved words'}])
+        with self.assertRaises(ValueError):filmcraft.native_caption_groups(dict(p,captionPages=[]))
+
     def test_named_commands_preserve_their_name_parameter(self):
         self.assertEqual(filmcraft.command('file.newSequence', name='Audition'), {'id':'file.newSequence','params':{'name':'Audition'}})
 

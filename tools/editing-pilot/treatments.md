@@ -2,6 +2,20 @@
 
 Draft for creator audition. Broad explanatory patterns were studied in the supplied Glooby reference; no graphics, audio or exact motion curves were copied. The manually supplied Gemini observations were sampled at 1 fps and do not establish precise sound timing. This pilot's timing comes from its own narration observations and animation frames.
 
+Four original motion primitives sit underneath the treatment families:
+
+| Preset | Behavior | Intended sound/use |
+| --- | --- | --- |
+| `slide-fade` | Short vertical entrance with a fade and settle | Whoosh during meaningful movement |
+| `pop` | Small scale entrance with a stable hold | Information pop; sequential reveals use narration anchors |
+| `fade` | Quiet entrance and exit | No movement sound required |
+| `impact` | Small scale entrance and brief damped rotation | Emphasis hit for a state change; not every list row |
+
+These use independently implemented remotion-kit-style patterns, safe single-item
+behavior and separate translate/scale/rotate properties. `src/motion.ts` holds defaults
+and synchronization targets. Scenes select presets; channel profiles control intensity
+and appearance. Technical tests and an audition do not constitute creator approval.
+
 | Family | Use when | Avoid when | First audition |
 | --- | --- | --- | --- |
 | Progressive explanation | 2–4 spoken points benefit from accumulating inside one container | The list is too fast to read, or footage demonstrates the point better | Time → ammunition → strength |

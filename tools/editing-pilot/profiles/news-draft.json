@@ -1,0 +1,15 @@
+{
+  "name": "Calm news - illustrative draft",
+  "ink": "#F5F7FA",
+  "accent": "#5499E8",
+  "secondary": "#8BC8FF",
+  "background": "#0A1422",
+  "panel": "#132236",
+  "headlineFont": "Arial Black",
+  "bodyFont": "Arial",
+  "captionFont": "Arial",
+  "captionSize": 52,
+  "captionWidth": 1400,
+  "captionBottom": 72,
+  "motionStrength": 0.45
+}

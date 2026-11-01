@@ -9,7 +9,7 @@ const criteria = {
   'source-card': 'Choose source-card when a brief quotation or summary and its supplied provenance help explain this beat. Narration summaries are not independent evidence, and ASR context cannot verify a factual claim. Prefer plain footage if the card merely repeats what is already clear. Choose none-of-these if evidence or context is missing.',
 };
 
-export function decisionPacket(scene: Scene, context: {narration: string; neighbors: string[]} = {narration: '', neighbors: []}) {
+export function decisionPacket(scene: Scene, context: {narration: string; neighbors: string[]; [key:string]:unknown} = {narration: '', neighbors: []}) {
   const options = [scene.kind, 'plain-hold', 'none-of-these'];
   const packet = {id: scene.id, situation: scene, context, options,
     question: 'Which treatment best serves the supplied beat?',

@@ -121,6 +121,11 @@ publishes.
   channel-pack boundary. The [pinned community-source review](research/remotion-repo-review.md)
   identifies useful caption, lower-third and chart patterns; no third-party code has
   been integrated. Reuse script-aligned words for a richer caption renderer.
+- The optional worker now implements four original motion presets, configurable
+  appearance profiles, and clean/active-word/emphasis captions from shared script/VO
+  timing. It exports the same phrase plan to editable native captions and SRT/VTT,
+  attaches matching Visual Script/source context, and flags uncertain timing. Live
+  VideoJev observations and Clef selection are still missing; see its README for auditions.
 
 ## Agent assignments
 
