@@ -84,10 +84,29 @@ Rendering saves hash-addressed outputs and verification records, reuses verified
 `clef-packets.json` contains contextual choices with “none of these”, candidate/context hashes and criteria. `src/decisions.ts` validates returned distributions and reports provisional threshold eligibility. It **never applies** a choice: calibration is not assumed. Writing and rendering invoke no LLM. A live adapter and independently verified clip selection remain later work.
 
 `clef_service.py` is an experimental loopback-only SystemOne server for the pinned
-Clef release. In the isolated WSL environment, download revision
-`fb4417d31c1d0f9e7e77f1141b40aaede7491e00` into the Hugging Face cache before
-starting `/opt/clef/bin/python /mnt/c/dev/spearfia/spearfia/tools/editing-pilot/clef_service.py`.
-It loads the backbone with NF4/BF16 and the native decision head, and rejects a
+Clef release. Clef uses its own Python environment at `/home/caesar/clef/venv`
+inside the existing `Ubuntu` WSL distribution. Its packages and caches are
+separate from `/home/caesar/videojev`. Download revision
+`fb4417d31c1d0f9e7e77f1141b40aaede7491e00` with
+`HF_HOME=$HOME/clef/cache/huggingface` before starting the service:
+
+```powershell
+wsl -d Ubuntu -- sh /mnt/c/dev/spearfia/spearfia/tools/editing-pilot/run-clef-wsl.sh
+```
+
+The installation is pinned in `requirements-clef-wsl.lock.txt`. To recreate the
+environment, run these commands in Ubuntu from this directory. The existing
+VideoJev `uv` executable is only the installer; the target is Clef's own venv.
+
+```sh
+export UV_CACHE_DIR="$HOME/clef/uv-cache"
+export UV_CONCURRENT_DOWNLOADS=1 UV_CONCURRENT_INSTALLS=1 UV_CONCURRENT_BUILDS=1
+"$HOME/videojev/bin/uv" venv --python 3.12 "$HOME/clef/venv"
+"$HOME/videojev/bin/uv" pip install --python "$HOME/clef/venv/bin/python" --torch-backend=cu130 -r requirements-clef-wsl.lock.txt
+HF_HOME="$HOME/clef/cache/huggingface" HF_HUB_DISABLE_XET=1 "$HOME/clef/venv/bin/python" -c 'from huggingface_hub import snapshot_download; snapshot_download("Cloudflare/clef-flash", revision="fb4417d31c1d0f9e7e77f1141b40aaede7491e00", max_workers=1)'
+```
+
+The service loads the backbone with NF4/BF16 and the native decision head, and rejects a
 context that would be truncated. `src/clef.ts` can submit complete pilot packets
 and cache advisory results by context and model revision; it is not yet wired
 into a preview command. No automatic edits or model-quality claims follow from
