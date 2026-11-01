@@ -70,6 +70,10 @@ publishes.
   [visual-script.md](visual-script.md) for the cue format.
 - Consider generating several hooks rather than several full scripts, and judging them
   against the DNA rubric.
+- Carry beat-level editorial intent into the Visual Script using the
+  [editing handoff](editing-handoff.md): purpose, reveal anchors, persistent elements,
+  evidence and caption/sound constraints. Editing fills gaps once per section and
+  reuses completed planning. This richer automatic handoff remains unimplemented.
 
 ### 6. Voiceover
 
@@ -94,6 +98,11 @@ publishes.
   watermarks, overlays, burned-in subtitles and low quality.
 - Every file is recorded in the project's `media/manifest.jsonl` and the library index,
   so clips are reused across videos and claims can be disputed.
+- A separate tested VideoJev workflow exists in the skills repository. Reuse its
+  applicable approved script-first beats and cached visual questions before new
+  inference. General source pools remain query-free; intended visuals and scored
+  observations stay distinct. See [the handoff](editing-handoff.md) for locations,
+  confidence limits and the editing integration still needed.
 - Risk: film, TV and sports footage draws Content ID claims, and fully automated channels
   face YouTube's reused-content monetization policy. Each channel's `production.md` says
   which source classes it accepts; CrazyWhatIfs accepts short, muted fair-use clips.
@@ -108,6 +117,10 @@ publishes.
   not prose it interprets.
 - Sound effects may come from ComfyUI with Stable Audio.
 - The optional [editing treatment pilot](../tools/editing-pilot/README.md) reads approved production inputs and a saved plan, then builds a separate audition with progressive cards, comparisons, narration context and synchronized sound. It leaves the source project unchanged. Clef choices are shadow-only; treatment approval, asset verification and a final listening review remain with the creator.
+- [Editing and caption requirements](editing-handoff.md) preserve the shared engine /
+  channel-pack boundary. The [pinned community-source review](research/remotion-repo-review.md)
+  identifies useful caption, lower-third and chart patterns; no third-party code has
+  been integrated. Reuse script-aligned words for a richer caption renderer.
 
 ## Agent assignments
 
@@ -130,7 +143,8 @@ TV clips under narration and animated captions.
 
 ## What's missing, in order
 
-1. Animated captions from the script and VO timing.
+1. Animated caption presentation reusing existing script/VO alignment, with timing
+   quality checks, phrase grouping and channel-specific styles.
 2. FilmCraft pull: edits in the review project mapped back to the script by cue ID.
 3. Editing style as catalog recipes.
 4. A way to update this process over time, possibly an outside reviewer agent that checks

@@ -6,6 +6,11 @@ Three data-controlled treatments: progressive explanation card, paired compariso
 
 See the [initial treatment catalog](treatments.md) for fit criteria, sound behavior, Clef's role and the creator review questions.
 
+Before extending this prototype, read [the editing handoff](../../docs/editing-handoff.md)
+and [community-source review](../../docs/research/remotion-repo-review.md). They record
+VideoJev reuse, the shared/channel-specific boundary and the caption upgrade path;
+these are requirements, not integrations already present in the worker.
+
 ## Prepare and review
 
 ```powershell

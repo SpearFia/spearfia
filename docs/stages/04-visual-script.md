@@ -25,6 +25,14 @@ You plan the visuals for the current Spear Fia project (MCP server "spearfia").
      only when meant ("Vice City", not "Vice City Stories").
    - "Footage": film for a movie or TV character's pool (searches the film channels),
      otherwise leave it out (game is the default).
+
+   Also follow docs/editing-handoff.md: use ACTION, GRAPHIC and CONTINUITY paragraphs
+   to record the purpose, exact reveal words/order, what remains on screen, evidence
+   requirements and caption/sound constraints. Record intentional holds. These are
+   planning instructions; richer treatments are not new edit/edit.md commands.
+   Reuse an applicable approved script-first beat interpretation; do not rewrite its
+   frozen files or replace it with legacy Subject pools. Fill missing intent once per
+   section through the normal revision-checked Visual Script operations.
 3. Text, numbers and comparisons: method "Generated artwork" with the exact on-screen text.
 4. Write one thumbnail concept and three title options in packaging.md style, as a
    Production note at the top of the Visual Script.

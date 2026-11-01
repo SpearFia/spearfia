@@ -16,6 +16,10 @@ Script-first, AI-assisted content creation (shorts to long-form YouTube), paired
   end-to-end production plan, what is built and what is missing), then `channel-workflow.md`,
   `agents.md` (MCP/HTTP tools) and `visual-script.md`.
 
+For Visual Script, media, editing or caption work, also read `docs/editing-handoff.md`.
+It records the required intent/evidence handoff, existing VideoJev work, caption reuse
+and implementation gaps. Preserve any applicable approved script-first beat plan.
+
 ## Commands
 
 ```powershell
