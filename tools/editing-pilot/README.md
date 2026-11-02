@@ -1,5 +1,12 @@
 # Editing treatment pilot
 
+The creator has authorized isolated Star 4 contextual auditions from the frozen
+v3 snapshot. The companion skills `editing_audition.py` renders four moments with
+pop alternatives and existing audio, then assembles a separate section preview
+only after creator selections. The renderer now accepts explicit `sourceLabel`
+and `qualifier` props; auxiliary text is never inferred from the last body item.
+Deployment and HQ finalization remain disabled.
+
 Current creator policy (2026-11-01): new experiments use **pop only** and complete
 videos of at most two minutes. Do not deploy this system to the current John Wick
 project, GTA History or large videos. Application and HQ finalization remain

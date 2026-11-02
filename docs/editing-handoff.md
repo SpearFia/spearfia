@@ -1,6 +1,12 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Editing intent, visual evidence and captions
 
+Subsequent creator instruction permits isolated contextual auditions from the
+frozen Star 4 v3 snapshot: four moments, pop alternatives and existing audio,
+followed by a separate proxy preview after layout selections. This is a specific
+preview exception; general deployment, GTA History and HQ finalization remain
+disabled. Preserve the archived review and current Stage 6 job controls.
+
 Current creator policy (2026-11-01): continue development on complete short videos
 of at most two minutes, using pop motion only. Deployment is disabled independently
 of calibration. Do not apply experimental editing to the current John Wick
