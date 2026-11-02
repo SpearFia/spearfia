@@ -1,5 +1,19 @@
 # Editing treatment pilot
 
+Current creator policy (2026-11-01): new experiments use **pop only** and complete
+videos of at most two minutes. Do not deploy this system to the current John Wick
+project, GTA History or large videos. Application and HQ finalization remain
+disabled independently of calibration. The Star 4 auditions and four-motion
+commands below document earlier work; preserve those artifacts rather than
+running another project trial.
+
+The companion skills experiment now has `videojev-media/editing_study.py` and
+`EDITING-STUDY.md`, using the spec's `editing-study` contract. It independently
+judges a graphic's explanatory role on every beat, then supplied pop treatment
+fit where candidates exist. Missing candidates are not model keep predictions.
+Both stages are recommendations only; no native edits or HQ upgrades occur.
+The creator form retains five-second style references and hides predictions.
+
 Experimental, optional Remotion worker for a read-only audiovisual audition. The Rust app and its existing edit parser are unchanged. Code is MIT OR Apache-2.0; source and generated media stay outside Git.
 
 Three data-controlled treatments: progressive explanation card, paired comparison, and source/context card. Each has measured narration anchors and independently scheduled sound transients. The source-card demonstration explicitly quotes narration, not independently verified film evidence. No assets or sounds are copied from the reference video.
@@ -118,7 +132,8 @@ and `finalize --editing-recipe`; see its `videojev-media/EDITING-RECIPE.md`.
 at the saved canvas and timebase. Proxy and HQ renders have distinct dependency
 bindings and render keys; an HQ insert must be regenerated from HQ media. Clef's
 service reports cold load, request latency, tokens and peak VRAM. The original
-standalone audition commands above continue to work.
+standalone audition commands remain historical prototypes; their existence
+does not authorize a new run on the excluded projects.
 
 ## Checks
 
