@@ -17,6 +17,14 @@ windows had actual Clef responses. All thirteen chose keep; the creator wanted a
 pop graphic in nine of those. The other 98 were deterministic planner fallbacks,
 not model predictions. Extra choices came from supplied Visual Script intent and
 timing checks, so their presence cannot measure model opportunity detection.
+An after-the-fact grouped re-read of the saved probabilities on these 13
+neighboring beats gives exact agreement 4/13. Each question had 14 options;
+the sum of treatment variants exceeds keep in 9/13, and grouped agreement
+(graphic versus no graphic, with none-of-these separate) is 9/13. Always
+answering "graphic" also scores 9/13. This does not show model skill. Grouping
+is measurement only: raw choice, thresholds, eligibility, frozen criteria,
+context hashes and disabled deployment are unchanged. No model was rerun.
+
 The skills experiment's `editing-study` path now asks graphic usefulness on every
 beat without the treatment menu, then independently judges supplied pop treatment
 fit where candidates exist. It reports each component separately, never applies
@@ -94,6 +102,30 @@ material on each render. Where an approved script-first interpretation exists,
 preserve it; do not replace it with legacy Subject pools or old cue-duration quotas.
 Future planning writes still go through Spear Fia's revision-checked operations.
 Do not edit a frozen plan or its approval receipt to add editing metadata.
+
+## TEXT and ACTION grammar
+
+Each `TEXT: <literal>` line is classified separately. Only the exact prefixes
+`REPORTED:`, `SOURCE:` and `CHAPTER <n>:` identify source/context lines;
+`STAR 4: COSTLY SURVIVAL` remains body text. Under `## Editing` in the video's
+`channel.md`, supply `Qualifiers: OUR GUESS / ESTIMATE` (example vocabulary).
+Qualifiers match whole lines exactly; no list means no recognized qualifiers.
+Several remaining body lines add `unclassified-text-line` for creator review.
+
+Body lines retain their original strings and split only on ` / `. Progressive
+candidates need at least two units. Comparison candidates need exactly two units
+and a `GRAPHIC:` line containing comparison, versus or paired. A slash alone
+cannot establish comparison intent. Source cards retain the unsplit body plus
+an explicit source or context heading. A qualifier used as a context-card heading
+is carried as `source_label`; otherwise it stays `qualifier`. Neither enters the
+body labels. The hand-mapped audition MOMENTS are the golden examples.
+
+Use `ACTION: Reveal "<exact unit>" at "<exact spoken words>"; reveal ...`.
+Reveal keywords are case insensitive and whitespace may wrap across lines.
+Resolve unique aligned quotes against measured words; source cards use the
+first unit's anchor. Missing anchors retain `missing-explicit-reveal-anchors`
+and omit `reveal_frames`, which the current schema permits. No interval-start
+times are invented. Existing readability and evidence checks still apply.
 
 ## VideoJev supplies visual evidence; Clef judges the treatment
 
