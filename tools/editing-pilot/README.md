@@ -112,6 +112,14 @@ and cache advisory results by context and model revision; it is not yet wired
 into a preview command. No automatic edits or model-quality claims follow from
 installing it.
 
+The separate `skills` experiment now exposes `jev.py edit-prepare`, `edit-preview`
+and `finalize --editing-recipe`; see its `videojev-media/EDITING-RECIPE.md`.
+`src/recipe-index.tsx` reuses these treatments to render caption-free native inserts
+at the saved canvas and timebase. Proxy and HQ renders have distinct dependency
+bindings and render keys; an HQ insert must be regenerated from HQ media. Clef's
+service reports cold load, request latency, tokens and peak VRAM. The original
+standalone audition commands above continue to work.
+
 ## Checks
 
 ```powershell

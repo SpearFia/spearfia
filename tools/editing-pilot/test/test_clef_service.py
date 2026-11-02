@@ -14,6 +14,8 @@ class ClefServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'exceeds'):
             validate_request(request, processor, encode)
         validate_request(request, processor, lambda *a, **k: SimpleNamespace(input_ids=[1]))
+        with self.assertRaisesRegex(ValueError, 'Browser origins'):
+            validate_request(request, processor, encode, 'https://example.com')
         request['images'] = []
         with self.assertRaisesRegex(ValueError, 'text state'):
             validate_request(request, processor, encode)

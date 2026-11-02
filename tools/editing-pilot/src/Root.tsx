@@ -8,7 +8,7 @@ import {WordCaptions} from './Captions.tsx';
 
 const ramp = (f: number, a: number, b: number, x = 0, y = 1) => interpolate(f, [a, b], [x, y], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
 
-const Treatment: React.FC<{scene: Scene; pilot:Pilot}> = ({scene,pilot:p}) => {
+export const Treatment: React.FC<{scene: Scene; pilot:Pilot}> = ({scene,pilot:p}) => {
   const f = useCurrentFrame()+scene.start;
   const {fps}=useVideoConfig(),pr=p.profile;
   const {ink,accent:red,secondary:gold,headlineFont:headline,bodyFont:body}=pr;

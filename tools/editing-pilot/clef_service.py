@@ -4,6 +4,8 @@ import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import sys
+import os
+import time
 
 MODEL = 'Cloudflare/clef-flash'
 REVISION = 'fb4417d31c1d0f9e7e77f1141b40aaede7491e00'
@@ -11,7 +13,9 @@ MAX_BYTES = 262144
 MAX_TOKENS = 16384
 
 
-def validate_request(request, processor, encode_record):
+def validate_request(request, processor, encode_record, origin=None):
+    if origin is not None:
+        raise ValueError('Browser origins cannot submit model work')
     if not isinstance(request, dict) or request.get('model') != MODEL or 'state' not in request:
         raise ValueError('Expected the pinned model and a state')
     if set(request) != {'model', 'state', 'questions'}:
@@ -32,18 +36,36 @@ def validate_request(request, processor, encode_record):
         raise ValueError('Complete decision context exceeds the token limit')
 
 
-def serve(model, processor, encode_record, systemone):
+def serve(model, processor, encode_record, systemone, runtime=None):
+    import torch
+    runtime = runtime or {}
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps(runtime).encode('utf-8')
+            self.send_response(200 if self.path == '/health' else 404)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self):
             try:
+                self.connection.settimeout(30)
                 if self.path != '/v1/systemone':
                     raise ValueError('Unknown endpoint')
                 length = int(self.headers.get('Content-Length', '0'))
                 if length <= 0 or length > MAX_BYTES:
                     raise ValueError('Invalid request size')
                 request = json.loads(self.rfile.read(length))
-                validate_request(request, processor, encode_record)
+                validate_request(request, processor, encode_record, self.headers.get('Origin'))
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+                started = time.perf_counter()
                 result = systemone(model, processor, request, max_length=MAX_TOKENS)
+                torch.cuda.synchronize()
+                result['runtime'] = dict(revision=REVISION, seconds=time.perf_counter()-started,
+                    peak_allocated_mib=torch.cuda.max_memory_allocated()/2**20,
+                    peak_reserved_mib=torch.cuda.max_memory_reserved()/2**20)
                 status = 200
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as error:
                 status, result = 400, {'error': str(error)}
@@ -60,6 +82,7 @@ def serve(model, processor, encode_record, systemone):
 
 
 def main():
+    started = time.perf_counter()
     import torch
     from huggingface_hub import snapshot_download
     from transformers import BitsAndBytesConfig
@@ -71,7 +94,12 @@ def main():
     quantization = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4',
                                       bnb_4bit_compute_dtype=torch.bfloat16)
     model, processor = load_release_model(path, device='cuda', quantization_config=quantization)
-    serve(model, processor, encode_record, systemone)
+    torch.cuda.synchronize()
+    runtime = dict(model=MODEL, revision=REVISION, pid=os.getpid(), cold_start_seconds=time.perf_counter()-started,
+        allocated_mib=torch.cuda.memory_allocated()/2**20, head_dtype=str(next(model.head.parameters()).dtype),
+        owner=os.environ.get('SPEARFIA_CLEF_OWNER'))
+    print(json.dumps(runtime), flush=True)
+    serve(model, processor, encode_record, systemone, runtime)
 
 
 if __name__ == '__main__':
