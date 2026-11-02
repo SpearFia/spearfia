@@ -5,11 +5,11 @@ import {Video} from '@remotion/media';
 import {Treatment} from './Root.tsx';
 import {PilotSchema, SceneSchema} from './model.ts';
 
-type Props={width:number;height:number;fps:number;duration:number;background:string;kind:'progressive'|'comparison'|'source-card';labels:string[];reveals:number[];motion:'slide-fade'|'pop'|'fade'|'impact'};
+type Props={width:number;height:number;fps:number;duration:number;background:string;kind:'progressive'|'comparison'|'source-card';labels:string[];reveals:number[];motion:'slide-fade'|'pop'|'fade'|'impact';title?:string;sourceLabel?:string};
 const Insert:React.FC<Props>=(p)=>{
-  const scene=SceneSchema.parse({id:'recipe',kind:p.kind,start:0,end:p.duration,title:' ',
+  const scene=SceneSchema.parse({id:'recipe',kind:p.kind,start:0,end:p.duration,title:p.title??' ',
     items:p.labels.map((text,i)=>({text,at:p.reveals[i]})),entrance:p.motion,reveal:p.motion,
-    ...(p.kind==='source-card'?{sourceLabel:p.labels.at(-1)}:{})});
+    ...(p.kind==='source-card'?{sourceLabel:p.sourceLabel??p.labels.at(-1)}:{})});
   const pilot=PilotSchema.parse({version:1,fps:30,duration:p.duration,baseline:p.background,voice:p.background,
     variant:'restrained',scenes:[scene],captions:[],sounds:[]});
   return <AbsoluteFill>
