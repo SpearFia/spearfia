@@ -117,6 +117,12 @@ publishes.
   not prose it interprets.
 - Sound effects may come from ComfyUI with Stable Audio.
 - The optional [editing treatment pilot](../tools/editing-pilot/README.md) reads approved production inputs and a saved plan, then builds a separate audition with progressive cards, comparisons, narration context and synchronized sound. It leaves the source project unchanged. Clef choices are shadow-only; treatment approval, asset verification and a final listening review remain with the creator.
+- Current creator policy limits new editing experiments to complete videos of at
+  most two minutes and pop motion. Deployment and HQ finalization are disabled,
+  independently of calibration. John Wick, GTA History and large videos are
+  excluded. The skills experiment separates graphic-role and treatment-fit
+  judgments in recommendation-only short studies; earlier Star 4 artifacts remain
+  archived.
 - [Editing and caption requirements](editing-handoff.md) preserve the shared engine /
   channel-pack boundary. The [pinned community-source review](research/remotion-repo-review.md)
   identifies useful caption, lower-third and chart patterns; no third-party code has
@@ -124,8 +130,10 @@ publishes.
 - The optional worker now implements four original motion presets, configurable
   appearance profiles, and clean/active-word/emphasis captions from shared script/VO
   timing. It exports the same phrase plan to editable native captions and SRT/VTT,
-  attaches matching Visual Script/source context, and flags uncertain timing. Live
-  VideoJev observations and Clef selection are still missing; see its README for auditions.
+  attaches matching Visual Script/source context, and flags uncertain timing. The
+  companion skills experiment attaches saved VideoJev observations and typed Clef
+  recommendations. Production selection remains disabled; see the editing handoff
+  for the current short-study boundary.
 
 ## Agent assignments
 

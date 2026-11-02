@@ -1,6 +1,21 @@
 <!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
 # Editing intent, visual evidence and captions
 
+Current creator policy (2026-11-01): continue development on complete short videos
+of at most two minutes, using pop motion only. Deployment is disabled independently
+of calibration. Do not apply experimental editing to the current John Wick
+project, GTA History or large videos. Preserve the earlier Star 4 reviews.
+
+The completed historical creator review contained 111 labels, but only thirteen
+windows had actual Clef responses. All thirteen chose keep; the creator wanted a
+pop graphic in nine of those. The other 98 were deterministic planner fallbacks,
+not model predictions. Extra choices came from supplied Visual Script intent and
+timing checks, so their presence cannot measure model opportunity detection.
+The skills experiment's `editing-study` path now asks graphic usefulness on every
+beat without the treatment menu, then independently judges supplied pop treatment
+fit where candidates exist. It reports each component separately, never applies
+edits, and does not interpret absent candidates as model keep decisions.
+
 Design requirement recorded 2026-11-01 while reviewing the isolated editing pilot.
 Reuse the approved script, Visual Script, recorded narration and existing VideoJev
 work. The complete handoff described below is **not implemented**. Do not describe
@@ -119,7 +134,8 @@ frame inspection, OCR or tracker when placement requires exact subject coordinat
 text exclusion zones or object motion. Sparse sampling cannot establish a precise
 impact frame or subsecond sound cue; inspect the short candidate locally at suitable
 frame resolution. Keep probabilities and timing uncertainty visible to downstream code.
-Clef thresholds remain shadow-only until calibrated on reviewed examples.
+Clef thresholds remain advisory. Calibration cannot override the creator's
+separate disabled-deployment policy.
 
 ## Shared engine, channel pack, episode binding
 
