@@ -5,7 +5,15 @@
 ````text
 Use the media-search skill on the current Spear Fia project (MCP server "spearfia").
 
-Run the auto loop from the skill until every LIVE cue is linked:
+Read docs/editing-handoff.md first. If the project has an applicable approved
+script-first/VideoJev interpretation, preserve its specific/general distinction and
+use that workflow instead of the legacy auto loop below. Validate existing approval
+receipts and source hashes; never grant approval yourself. Reuse saved per-question
+results and source/time provenance. Query-free general footage stays query-free.
+Keep intended visuals separate from scored/confirmed observations and unresolved
+requirements so the editing stage can judge the actual selected footage.
+
+Otherwise run the auto loop from the skill until every LIVE cue is linked:
   python <skill>/scripts/pool.py auto --project <project folder>
   look at each contact sheet once and note bad clip numbers
   python <skill>/scripts/pool.py commit --project <project folder> --drop BATCH:N,N

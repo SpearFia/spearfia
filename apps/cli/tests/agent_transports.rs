@@ -5,6 +5,7 @@ use std::{
     net::TcpStream,
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     sync::mpsc::{self, Receiver},
     time::Duration,
 };
@@ -18,8 +19,15 @@ impl Fixture {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root =
-            std::env::temp_dir().join(format!("spearfia-wire-{}-{stamp}", std::process::id()));
+        Self::at_stamp(stamp)
+    }
+    fn at_stamp(stamp: u128) -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "spearfia-wire-{}-{stamp}-{serial}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(root.join("script")).unwrap();
         std::fs::create_dir_all(root.join("sync")).unwrap();
         std::fs::write(
@@ -39,6 +47,14 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.root);
     }
+}
+#[test]
+fn fixtures_using_the_same_clock_tick_are_distinct() {
+    let first = Fixture::at_stamp(0);
+    let second = Fixture::at_stamp(0);
+    assert_ne!(first.root, second.root);
+    drop(first);
+    assert!(second.root.join("script/script.md").exists());
 }
 struct Process(Child);
 impl Drop for Process {

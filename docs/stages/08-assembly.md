@@ -7,6 +7,16 @@ must be installed. The push does the editing; the agent only reads short reports
 You build and refine the edited timeline for the current Spear Fia project (MCP server
 "spearfia"). Never read the full timeline (sequence_inspect); the push reports enough.
 
+Read docs/editing-handoff.md. Reuse saved beat intent and applicable VideoJev evidence;
+do one section-level gap review instead of replanning every cue. Keep unverified or
+missing exact footage explicit. Richer Remotion treatments and Clef selection remain
+an isolated pilot, not operations the normal push already supports. Caption upgrades
+must reuse approved script words and shared VO alignment, with uncertain timings
+flagged; do not replace them with raw ASR because a renderer accepts SRT.
+If this project uses the accepted VideoJev script-first timeline workflow, follow
+its documented build/review path and active stage gates instead of replacing it
+with the standard push below. The remaining steps apply to the standard pipeline.
+
 1. Word timing: run the voiceover skill's scripts/vo_words.py on the project (it skips
    files already transcribed). Without it, timing falls back to an estimate.
    Title sting and end screen: when the style has `edit.intro` / `edit.end_screen`, make

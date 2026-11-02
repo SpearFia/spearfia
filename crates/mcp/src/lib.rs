@@ -376,8 +376,13 @@ impl Server {
             "timeline_push" => {
                 let a: PushArgs = decode(arguments)?;
                 let cli = spearfia_adapter_filmcraft::find_cli()?;
-                let opts = spearfia_adapter_filmcraft::Options { filmstrips: a.filmstrips };
-                Ok(spearfia_adapter_filmcraft::push_with(&self.editor.project, &cli, &opts)?.summary())
+                let opts = spearfia_adapter_filmcraft::Options {
+                    filmstrips: a.filmstrips,
+                };
+                Ok(
+                    spearfia_adapter_filmcraft::push_with(&self.editor.project, &cli, &opts)?
+                        .summary(),
+                )
             }
             _ => Err(invalid(format!("Unknown tool: {name}"))),
         }

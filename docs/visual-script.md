@@ -21,6 +21,12 @@ Continuity / constraint, and Production note. The saved prefixes are `VISUAL:`, 
 is non-spoken, including text without a prefix. Timing labels derive from linked narration:
 recorded VO lengths once VO files are linked, otherwise a 150 wpm estimate.
 
+For editing intent, also follow [the editing handoff](editing-handoff.md): record why
+a treatment helps, the exact reveal words/order, what persists, evidence requirements,
+caption space and useful sound intent. Existing ACTION, GRAPHIC and CONTINUITY prose
+can carry this today; automated treatment selection remains planned. Reuse completed
+beat planning and any applicable approved script-first interpretation.
+
 ## Cue details and feedback
 
 Select a cue in the left panel. Visual type (chart, character scene, overlay, hold, etc.)

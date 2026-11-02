@@ -140,7 +140,14 @@ pub fn compile(
     media: &BTreeMap<String, Option<u64>>,
     timebase: Timebase,
 ) -> (TimelinePlan, Vec<Issue>) {
-    compile_heard(script, links, media, timebase, &Heard::new(), &Holds::default())
+    compile_heard(
+        script,
+        links,
+        media,
+        timebase,
+        &Heard::new(),
+        &Holds::default(),
+    )
 }
 
 /// [`compile`] with heard words and holds: pictures, transitions and cues land on the frame
@@ -157,7 +164,8 @@ pub fn compile_heard(
     let mut issues = Vec::new();
     let (vo, pictures) = anchor_links(links, media, timebase, &words, &mut issues);
     let held = hold_lines(script, &words, holds);
-    let (mut items, spans, now, _) = voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
+    let (mut items, spans, now, _) =
+        voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
 
     // Pictures start where their words are spoken and run to the next picture on their
     // track or the end of their voiceover span, whichever comes first. Music and SFX run to
@@ -336,12 +344,16 @@ fn hold_lines(script: &Script, words: &Words, holds: &Holds) -> Vec<(usize, u64)
         .after
         .iter()
         .filter_map(|(prefix, frames)| {
-            let k = heads.iter().position(|(_, t)| t.to_lowercase().starts_with(&prefix.to_lowercase()))?;
+            let k = heads
+                .iter()
+                .position(|(_, t)| t.to_lowercase().starts_with(&prefix.to_lowercase()))?;
             let next = heads.get(k + 1)?.0;
             Some((words.meta.iter().position(|m| m.0 > next)?, *frames))
         })
         .collect()
 }
+
+type VoiceResult = (Vec<Item>, Vec<Span>, u64, Vec<(u64, u64)>);
 
 /// Voiceover back to back on A1, with `held` holds before the voiceover at or after their
 /// line and `end` frames after it; the span of script words each one owns, and the holds as
@@ -354,7 +366,7 @@ fn voice(
     held: &[(usize, u64)],
     end: u64,
     issues: &mut Vec<Issue>,
-) -> (Vec<Item>, Vec<Span>, u64, Vec<(u64, u64)>) {
+) -> VoiceResult {
     let mut items = Vec::new();
     let mut spans: Vec<Span> = Vec::new();
     let mut gaps = Vec::new();
@@ -643,8 +655,13 @@ impl<'a> Timing<'a> {
         let mut issues = Vec::new();
         let (vo, _) = anchor_links(links, media, timebase, &words, &mut issues);
         let held = hold_lines(script, &words, holds);
-        let (_, spans, _, gaps) = voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
-        Self { words, spans, holds: gaps }
+        let (_, spans, _, gaps) =
+            voice(&vo, &words, heard, timebase, &held, holds.end, &mut issues);
+        Self {
+            words,
+            spans,
+            holds: gaps,
+        }
     }
 
     /// The frame `quote` (near script line `line`) starts being spoken.
@@ -657,7 +674,10 @@ impl<'a> Timing<'a> {
                 let mut best: Option<(usize, (usize, usize))> = None;
                 for (i, (no, words)) in self.words.lines.iter().enumerate() {
                     let w: Vec<String> = words.iter().map(|w| norm(w)).collect();
-                    if let Some(at) = w.windows(needle.len().max(1)).position(|x| x == needle.as_slice()) {
+                    if let Some(at) = w
+                        .windows(needle.len().max(1))
+                        .position(|x| x == needle.as_slice())
+                    {
                         let d = no.abs_diff(line);
                         if best.is_none_or(|(bd, _)| d < bd) {
                             best = Some((d, (i, at)));

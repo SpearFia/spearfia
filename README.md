@@ -35,6 +35,8 @@ project from the linked media.
 
 Start `spearfia mcp --project <folder>` for MCP stdio, or `spearfia api --project <folder>` for the authenticated loopback HTTP API. Script/Visual Script edits use revision checks and undo/redo; creator approval stays in the desktop. See [setup and tool reference](docs/agents.md).
 
+An optional [editing treatment pilot](tools/editing-pilot/README.md) auditions three Remotion treatments with narration-aligned sound and a separate FilmCraft review project. It reads production inputs without changing project state; treatment and sound approval remain manual.
+
 ## License
 
 Licensed under either of

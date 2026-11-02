@@ -22,7 +22,7 @@ version agents should follow; update it when the plan changes.
 | 7 | Media search | Footage and images per cue, linked to words | MCP `links_add`; Visual Script references | Linking built; search skill missing |
 | 8 | Assembly | A FilmCraft review timeline | Sync stage, MCP `timeline_push`, `spearfia push filmcraft` | One-way push built; pull missing |
 | 9 | Music and SFX | Beds and effects on their own tracks | `audio-gen` skill (ComfyUI, Stable Audio 3); `music`/`sfx` folder roles → A2/A3 | Built (generation tested) |
-| 9b | Channel-style edit | Transitions, captions, camera moves | Catalog recipes and looks (planned) | Missing |
+| 9b | Channel-style edit | Transitions, captions, camera moves | Catalog recipes and looks (planned); optional [Remotion audition](../tools/editing-pilot/README.md) | Isolated pilot; production integration missing |
 | 10 | Thumbnail and description | Finished thumbnail and description | None (PhotoCraft or ComfyUI) | External |
 | 11 | Review and lessons | Creator review; dated notes in `lessons.md` | Channel guides | Manual |
 
@@ -70,6 +70,10 @@ publishes.
   [visual-script.md](visual-script.md) for the cue format.
 - Consider generating several hooks rather than several full scripts, and judging them
   against the DNA rubric.
+- Carry beat-level editorial intent into the Visual Script using the
+  [editing handoff](editing-handoff.md): purpose, reveal anchors, persistent elements,
+  evidence and caption/sound constraints. Editing fills gaps once per section and
+  reuses completed planning. This richer automatic handoff remains unimplemented.
 
 ### 6. Voiceover
 
@@ -94,6 +98,11 @@ publishes.
   watermarks, overlays, burned-in subtitles and low quality.
 - Every file is recorded in the project's `media/manifest.jsonl` and the library index,
   so clips are reused across videos and claims can be disputed.
+- A separate tested VideoJev workflow exists in the skills repository. Reuse its
+  applicable approved script-first beats and cached visual questions before new
+  inference. General source pools remain query-free; intended visuals and scored
+  observations stay distinct. See [the handoff](editing-handoff.md) for locations,
+  confidence limits and the editing integration still needed.
 - Risk: film, TV and sports footage draws Content ID claims, and fully automated channels
   face YouTube's reused-content monetization policy. Each channel's `production.md` says
   which source classes it accepts; CrazyWhatIfs accepts short, muted fair-use clips.
@@ -107,6 +116,16 @@ publishes.
 - Editing style from the DNA should become recipes or looks the editing agent applies,
   not prose it interprets.
 - Sound effects may come from ComfyUI with Stable Audio.
+- The optional [editing treatment pilot](../tools/editing-pilot/README.md) reads approved production inputs and a saved plan, then builds a separate audition with progressive cards, comparisons, narration context and synchronized sound. It leaves the source project unchanged. Clef choices are shadow-only; treatment approval, asset verification and a final listening review remain with the creator.
+- [Editing and caption requirements](editing-handoff.md) preserve the shared engine /
+  channel-pack boundary. The [pinned community-source review](research/remotion-repo-review.md)
+  identifies useful caption, lower-third and chart patterns; no third-party code has
+  been integrated. Reuse script-aligned words for a richer caption renderer.
+- The optional worker now implements four original motion presets, configurable
+  appearance profiles, and clean/active-word/emphasis captions from shared script/VO
+  timing. It exports the same phrase plan to editable native captions and SRT/VTT,
+  attaches matching Visual Script/source context, and flags uncertain timing. Live
+  VideoJev observations and Clef selection are still missing; see its README for auditions.
 
 ## Agent assignments
 
@@ -129,7 +148,8 @@ TV clips under narration and animated captions.
 
 ## What's missing, in order
 
-1. Animated captions from the script and VO timing.
+1. Animated caption presentation reusing existing script/VO alignment, with timing
+   quality checks, phrase grouping and channel-specific styles.
 2. FilmCraft pull: edits in the review project mapped back to the script by cue ID.
 3. Editing style as catalog recipes.
 4. A way to update this process over time, possibly an outside reviewer agent that checks

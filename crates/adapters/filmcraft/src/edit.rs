@@ -6,7 +6,7 @@ use crate::push::ticks;
 use serde_json::json;
 use spearfia_core::project::{Project, Timebase};
 use spearfia_sync::edit::{Action, Op, Style};
-use spearfia_sync::{Item, Kind, TimelinePlan, TimedWord, Timing};
+use spearfia_sync::{Item, Kind, TimedWord, TimelinePlan, Timing};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -32,14 +32,17 @@ pub struct Card {
 }
 
 /// The placed picture clip covering `frame` on V2, or `None`.
-fn picture_at<'p>(plan: &'p TimelinePlan, frame: u64) -> Option<&'p Item> {
+fn picture_at(plan: &TimelinePlan, frame: u64) -> Option<&Item> {
     plan.items.iter().find(|i| {
-        i.kind == Kind::Clip && i.track == "V2" && i.start_frame <= frame && frame < i.start_frame + i.duration_frames
+        i.kind == Kind::Clip
+            && i.track == "V2"
+            && i.start_frame <= frame
+            && frame < i.start_frame + i.duration_frames
     })
 }
 
 /// The first placed picture clip starting at or after `frame` on V2.
-fn picture_from<'p>(plan: &'p TimelinePlan, frame: u64) -> Option<&'p Item> {
+fn picture_from(plan: &TimelinePlan, frame: u64) -> Option<&Item> {
     plan.items
         .iter()
         .filter(|i| i.kind == Kind::Clip && i.track == "V2" && i.start_frame >= frame)
@@ -97,7 +100,9 @@ pub fn apply(
         };
         match r {
             Ok(()) => out.ops += 1,
-            Err(e) => out.problems.push(format!("{} at {}: {e}", op.from, clock(op.frame, tb))),
+            Err(e) => out
+                .problems
+                .push(format!("{} at {}: {e}", op.from, clock(op.frame, tb))),
         }
     }
     out
@@ -114,7 +119,15 @@ pub struct Extras {
 
 /// Fill the timing's holds: the intro (background, title card, hit) in the first hold and the
 /// end screen (background, music fading out) in the tail.
-pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing, title: &str, tb: Timebase, size: [u32; 2]) -> Extras {
+pub fn extras(
+    fc: &mut Client,
+    project: &Project,
+    style: &Style,
+    timing: &Timing,
+    title: &str,
+    tb: Timebase,
+    size: [u32; 2],
+) -> Extras {
     let mut out = Extras::default();
     let fps = f64::from(tb.num) / f64::from(tb.den);
     let mut pictures = Vec::new();
@@ -129,12 +142,25 @@ pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing
             let text = text.replace("{title}", &title.to_uppercase());
             let secs = len as f64 / fps;
             match card(fc, style, &text, secs, at, tb, size) {
-                Ok(bounds) => out.cards.push(Card { from: "intro".into(), frame: at, seconds: secs, text, bounds }),
+                Ok(bounds) => out.cards.push(Card {
+                    from: "intro".into(),
+                    frame: at,
+                    seconds: secs,
+                    text,
+                    bounds,
+                }),
                 Err(e) => out.problems.push(format!("intro card: {e}")),
             }
         }
         if let Some(name) = &i.sfx
-            && let Err(e) = sfx(fc, project, &mut BTreeMap::new(), name, style.mix.sfx_db, at)
+            && let Err(e) = sfx(
+                fc,
+                project,
+                &mut BTreeMap::new(),
+                name,
+                style.mix.sfx_db,
+                at,
+            )
         {
             out.problems.push(format!("intro sfx: {e}"));
         }
@@ -149,10 +175,18 @@ pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing
         if let Some(m) = &e.music {
             let fade = (2.0 * fps) as u64;
             let r = place(fc, project, m, "A2", at, len, tb).and_then(|clip| {
-                fc.command("clip.audioGain", json!({"clips": [clip], "mode": "set", "db": e.music_db}))
-                    .and_then(|_| fc.command("sequence.applyAudioTransition", json!({"clip": clip, "edge": "out", "frames": fade})))
-                    .map(drop)
-                    .map_err(|e| e.to_string())
+                fc.command(
+                    "clip.audioGain",
+                    json!({"clips": [clip], "mode": "set", "db": e.music_db}),
+                )
+                .and_then(|_| {
+                    fc.command(
+                        "sequence.applyAudioTransition",
+                        json!({"clip": clip, "edge": "out", "frames": fade}),
+                    )
+                })
+                .map(drop)
+                .map_err(|e| e.to_string())
             });
             if let Err(err) = r {
                 out.problems.push(format!("end screen music: {err}"));
@@ -161,7 +195,10 @@ pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing
     }
     if !pictures.is_empty() {
         let ids: Vec<u64> = pictures.iter().map(|p| p.0).collect();
-        let _ = fc.command("timeline.select", json!({"clips": ids, "add": false, "toggle": false}));
+        let _ = fc.command(
+            "timeline.select",
+            json!({"clips": ids, "add": false, "toggle": false}),
+        );
         let _ = fc.command("clip.scaleToFrameSize", json!({}));
         let _ = fc.command("edit.deselectAll", json!({}));
     }
@@ -170,56 +207,110 @@ pub fn extras(fc: &mut Client, project: &Project, style: &Style, timing: &Timing
 }
 
 /// One adjustment layer on V4 over frames `0..end`: a Gaussian blur masked to the bottom strip.
-pub fn blur_strip(fc: &mut Client, style: &Style, end: u64, tb: Timebase, size: [u32; 2]) -> Result<(), String> {
-    let Some(s) = &style.edit.blur_strip else { return Ok(()) };
+pub fn blur_strip(
+    fc: &mut Client,
+    style: &Style,
+    end: u64,
+    tb: Timebase,
+    size: [u32; 2],
+) -> Result<(), String> {
+    let Some(s) = &style.edit.blur_strip else {
+        return Ok(());
+    };
     let e = |r: spearfia_core::error::Result<serde_json::Value>| r.map_err(|e| e.to_string());
-    let item = e(fc.command("file.newAdjustmentLayer", json!({"seconds": end as f64 * f64::from(tb.den) / f64::from(tb.num)})))?["item"]
+    let item = e(fc.command(
+        "file.newAdjustmentLayer",
+        json!({"seconds": end as f64 * f64::from(tb.den) / f64::from(tb.num)}),
+    ))?["item"]
         .as_u64()
         .ok_or("FilmCraft made no adjustment layer")?;
-    let clip = e(fc.command("timeline.place", json!({"item": item, "track": "V4", "frame": 0, "duration": ticks(end, tb)})))?["clips"][0]
+    let clip = e(fc.command(
+        "timeline.place",
+        json!({"item": item, "track": "V4", "frame": 0, "duration": ticks(end, tb)}),
+    ))?["clips"][0]
         .as_u64()
         .ok_or("FilmCraft placed no adjustment layer")?;
     let (w, h) = (f64::from(size[0]), f64::from(size[1]));
     let strip = (h * s.height).round();
-    e(fc.command("effects.apply", json!({"clips": [clip], "effect": "gaussian_blur"})))?;
-    e(fc.command("effects.setParam", json!({"clip": clip, "effect": 0, "param": "blurriness", "value": s.blur})))?;
-    e(fc.command("effects.setParam", json!({"clip": clip, "effect": 0, "param": "repeat_edge", "value": true})))?;
+    e(fc.command(
+        "effects.apply",
+        json!({"clips": [clip], "effect": "gaussian_blur"}),
+    ))?;
+    e(fc.command(
+        "effects.setParam",
+        json!({"clip": clip, "effect": 0, "param": "blurriness", "value": s.blur}),
+    ))?;
+    e(fc.command(
+        "effects.setParam",
+        json!({"clip": clip, "effect": 0, "param": "repeat_edge", "value": true}),
+    ))?;
     // Wider than the frame so the feather doesn't soften the strip's sides.
     e(fc.command("masks.add", json!({"clip": clip, "effect": 0, "shape": "rectangle",
                                      "center": [w / 2.0, h - strip / 2.0], "size": [w * 1.1, strip]})))?;
-    e(fc.command("masks.set", json!({"clip": clip, "effect": 0, "mask": 0, "feather": s.feather})))?;
+    e(fc.command(
+        "masks.set",
+        json!({"clip": clip, "effect": 0, "mask": 0, "feather": s.feather}),
+    ))?;
     Ok(())
 }
 
 /// Import a project file and place `len` frames of it from its start on `track` at `at`.
-fn place(fc: &mut Client, project: &Project, rel: &str, track: &str, at: u64, len: u64, tb: Timebase) -> Result<u64, String> {
+fn place(
+    fc: &mut Client,
+    project: &Project,
+    rel: &str,
+    track: &str,
+    at: u64,
+    len: u64,
+    tb: Timebase,
+) -> Result<u64, String> {
     let file = project.root.join(rel);
     if !file.is_file() {
         return Err(format!("no {rel} in the project"));
     }
     let abs = std::path::absolute(&file).map_err(|e| e.to_string())?;
-    let r = fc.tool("media_import", json!({"paths": [abs.to_string_lossy()]})).map_err(|e| e.to_string())?;
-    let item = r["items"][0].as_u64().ok_or("FilmCraft could not import it")?;
+    let r = fc
+        .tool("media_import", json!({"paths": [abs.to_string_lossy()]}))
+        .map_err(|e| e.to_string())?;
+    let item = r["items"][0]
+        .as_u64()
+        .ok_or("FilmCraft could not import it")?;
     let mut p = json!({"item": item, "track": track, "frame": at, "sourceIn": 0, "duration": ticks(len, tb)});
     if track.starts_with('V') {
         p["audio"] = json!(false);
     }
     let placed = fc.command("timeline.place", p).map_err(|e| e.to_string())?;
-    placed["clips"][0].as_u64().ok_or_else(|| "FilmCraft placed nothing".into())
+    placed["clips"][0]
+        .as_u64()
+        .ok_or_else(|| "FilmCraft placed nothing".into())
 }
 
 /// Layout and timing checks on what was placed, worked out from the plan and measured card
 /// boxes, so only flagged times need looking at. Each line starts with the time and the
 /// edit line it came from. `extra` pictures (intro, end screen) count as picture.
-pub fn checks(cards: &[Card], plan: &TimelinePlan, extra: &[(u64, u64)], ops: &[Op], style: &Style, size: [u32; 2], tb: Timebase) -> Vec<(u64, String)> {
+pub fn checks(
+    cards: &[Card],
+    plan: &TimelinePlan,
+    extra: &[(u64, u64)],
+    ops: &[Op],
+    style: &Style,
+    size: [u32; 2],
+    tb: Timebase,
+) -> Vec<(u64, String)> {
     let fps = f64::from(tb.num) / f64::from(tb.den);
     let (w, h) = (f64::from(size[0]), f64::from(size[1]));
     // Dips run from the first picture at or after their frame for their length.
     let dips: Vec<(u64, u64)> = ops
         .iter()
         .filter_map(|o| match &o.action {
-            Action::Transition { effect, seconds } if effect.starts_with("dip") => picture_from(plan, o.frame)
-                .map(|i| (i.start_frame, i.start_frame + (seconds * fps).round() as u64)),
+            Action::Transition { effect, seconds } if effect.starts_with("dip") => {
+                picture_from(plan, o.frame).map(|i| {
+                    (
+                        i.start_frame,
+                        i.start_frame + (seconds * fps).round() as u64,
+                    )
+                })
+            }
             _ => None,
         })
         .collect();
@@ -249,7 +340,10 @@ pub fn checks(cards: &[Card], plan: &TimelinePlan, extra: &[(u64, u64)], ops: &[
         }
         let end = c.frame + (c.seconds * fps).round() as u64;
         let dark = (c.frame..end)
-            .filter(|&f| (picture_at(plan, f).is_none() && !extra.iter().any(|&(a, n)| a <= f && f < a + n)) || dips.iter().any(|&(a, b)| a <= f && f < b))
+            .filter(|&f| {
+                (picture_at(plan, f).is_none() && !extra.iter().any(|&(a, n)| a <= f && f < a + n))
+                    || dips.iter().any(|&(a, b)| a <= f && f < b)
+            })
             .count();
         if end > c.frame && dark * 2 > (end - c.frame) as usize {
             out.push((c.frame, format!("{at}: card is over black for {:.1} of its {:.1} s; link a picture there or move the card", dark as f64 / fps, c.seconds)));
@@ -277,10 +371,20 @@ fn zoom(
         .iter()
         .find(|r| r.id.contains(&format!("/{name}@")) || r.id == name)
         .ok_or(format!("no recipe `{name}` in execution.md"))?;
-    let (from, to) = recipe.scale().ok_or(format!("recipe `{name}` has no scale from/to"))?;
+    let (from, to) = recipe
+        .scale()
+        .ok_or(format!("recipe `{name}` has no scale from/to"))?;
     let item = picture_at(plan, frame).ok_or("no picture clip there")?;
-    let clip = *clips.get(item.cue_id.as_str()).ok_or("picture clip not placed")?;
-    for (value, at) in [(from, item.start_frame), (to, item.start_frame + item.duration_frames.saturating_sub(1))] {
+    let clip = *clips
+        .get(item.cue_id.as_str())
+        .ok_or("picture clip not placed")?;
+    for (value, at) in [
+        (from, item.start_frame),
+        (
+            to,
+            item.start_frame + item.duration_frames.saturating_sub(1),
+        ),
+    ] {
         fc.command(
             "effects.setParam",
             json!({"clip": clip, "effect": "motion", "param": "scale", "value": value, "time": ticks(at, tb), "keyframe": true}),
@@ -291,7 +395,15 @@ fn zoom(
 }
 
 /// Place a card; returns its measured frame-space box (`graphics.list` quad).
-fn card(fc: &mut Client, style: &Style, text: &str, seconds: f64, frame: u64, tb: Timebase, size: [u32; 2]) -> Result<Option<[f64; 4]>, String> {
+fn card(
+    fc: &mut Client,
+    style: &Style,
+    text: &str,
+    seconds: f64,
+    frame: u64,
+    tb: Timebase,
+    size: [u32; 2],
+) -> Result<Option<[f64; 4]>, String> {
     let c = &style.edit.card;
     let r = fc
         .command(
@@ -309,12 +421,22 @@ fn card(fc: &mut Client, style: &Style, text: &str, seconds: f64, frame: u64, tb
     .map_err(|e| e.to_string())?;
     // Measuring is best effort: a card FilmCraft won't measure is placed, just unchecked.
     let listed = fc.command("graphics.list", json!({"clip": clip})).ok();
-    let quad = listed.as_ref().and_then(|l| l["layers"][0]["quad"].as_array().cloned()).unwrap_or_default();
-    let pts: Vec<(f64, f64)> = quad.iter().filter_map(|p| Some((p[0].as_f64()?, p[1].as_f64()?))).collect();
+    let quad = listed
+        .as_ref()
+        .and_then(|l| l["layers"][0]["quad"].as_array().cloned())
+        .unwrap_or_default();
+    let pts: Vec<(f64, f64)> = quad
+        .iter()
+        .filter_map(|p| Some((p[0].as_f64()?, p[1].as_f64()?)))
+        .collect();
     Ok((!pts.is_empty()).then(|| {
         let (xs, ys) = (pts.iter().map(|p| p.0), pts.iter().map(|p| p.1));
-        [xs.clone().fold(f64::MAX, f64::min), ys.clone().fold(f64::MAX, f64::min),
-         xs.fold(f64::MIN, f64::max), ys.fold(f64::MIN, f64::max)]
+        [
+            xs.clone().fold(f64::MAX, f64::min),
+            ys.clone().fold(f64::MAX, f64::min),
+            xs.fold(f64::MIN, f64::max),
+            ys.fold(f64::MIN, f64::max),
+        ]
     }))
 }
 
@@ -333,22 +455,32 @@ fn sfx(
                 .iter()
                 .map(|ext| project.root.join("SFX").join(format!("{name}.{ext}")))
                 .find(|p| p.is_file())
-                .ok_or(format!("no SFX/{name}.(wav|mp3|ogg|flac|m4a) in the project"))?;
+                .ok_or(format!(
+                    "no SFX/{name}.(wav|mp3|ogg|flac|m4a) in the project"
+                ))?;
             let abs = std::path::absolute(&file).map_err(|e| e.to_string())?;
             let r = fc
                 .tool("media_import", json!({"paths": [abs.to_string_lossy()]}))
                 .map_err(|e| e.to_string())?;
-            let i = r["items"][0].as_u64().ok_or("FilmCraft could not import it")?;
+            let i = r["items"][0]
+                .as_u64()
+                .ok_or("FilmCraft could not import it")?;
             imported.insert(name.to_string(), i);
             i
         }
     };
     let placed = fc
-        .command("timeline.place", json!({"item": item, "track": "A3", "frame": frame}))
+        .command(
+            "timeline.place",
+            json!({"item": item, "track": "A3", "frame": frame}),
+        )
         .map_err(|e| e.to_string())?;
     if db != 0.0 {
-        fc.command("clip.audioGain", json!({"clips": placed["clips"], "mode": "set", "db": db}))
-            .map_err(|e| e.to_string())?;
+        fc.command(
+            "clip.audioGain",
+            json!({"clips": placed["clips"], "mode": "set", "db": db}),
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -369,11 +501,15 @@ pub fn captions(
         by_file.entry(&w.path).or_default().push(w);
     }
     for (path, ws) in by_file {
-        let Some(&item) = items.get(path) else { continue };
+        let Some(&item) = items.get(path) else {
+            continue;
+        };
         let file_ticks = |f: u64| ticks((f as i64 - ws[0].origin).max(0) as u64, tb);
         let list: Vec<_> = ws
             .iter()
-            .map(|w| json!({"text": w.text, "start": file_ticks(w.start), "end": file_ticks(w.end)}))
+            .map(
+                |w| json!({"text": w.text, "start": file_ticks(w.start), "end": file_ticks(w.end)}),
+            )
             .collect();
         fc.command(
             "transcript.set",
@@ -382,7 +518,10 @@ pub fn captions(
         .map_err(|e| e.to_string())?;
     }
     let r = fc
-        .command("transcript.createCaptions", json!({"maxChars": c.max_chars, "lines": 1}))
+        .command(
+            "transcript.createCaptions",
+            json!({"maxChars": c.max_chars, "lines": 1}),
+        )
         .map_err(|e| e.to_string())?;
     fc.command(
         "captions.setStyle",
@@ -394,7 +533,12 @@ pub fn captions(
 }
 
 /// Music (A2) and SFX links (A3) at the channel's mix levels.
-pub fn mix(fc: &mut Client, plan: &TimelinePlan, clips: &BTreeMap<&str, u64>, style: &Style) -> Vec<String> {
+pub fn mix(
+    fc: &mut Client,
+    plan: &TimelinePlan,
+    clips: &BTreeMap<&str, u64>,
+    style: &Style,
+) -> Vec<String> {
     let mut problems = Vec::new();
     for (track, db) in [("A2", style.mix.music_db), ("A3", style.mix.sfx_db)] {
         let ids: Vec<u64> = plan
@@ -406,7 +550,10 @@ pub fn mix(fc: &mut Client, plan: &TimelinePlan, clips: &BTreeMap<&str, u64>, st
         if ids.is_empty() || db == 0.0 {
             continue;
         }
-        if let Err(e) = fc.command("clip.audioGain", json!({"clips": ids, "mode": "set", "db": db})) {
+        if let Err(e) = fc.command(
+            "clip.audioGain",
+            json!({"clips": ids, "mode": "set", "db": db}),
+        ) {
             problems.push(format!("mix {track}: {e}"));
         }
     }
@@ -415,7 +562,13 @@ pub fn mix(fc: &mut Client, plan: &TimelinePlan, clips: &BTreeMap<&str, u64>, st
 
 /// One contact sheet per section: `frames` evenly spaced renders tiled 3 wide with ffmpeg
 /// (when it's on PATH; the PNGs stay either way). Returns the sheets made.
-pub fn filmstrips(fc: &mut Client, dir: &std::path::Path, sections: &[(String, u64, u64)], frames: u64, tb: Timebase) -> (Vec<PathBuf>, Vec<String>) {
+pub fn filmstrips(
+    fc: &mut Client,
+    dir: &std::path::Path,
+    sections: &[(String, u64, u64)],
+    frames: u64,
+    tb: Timebase,
+) -> (Vec<PathBuf>, Vec<String>) {
     let (mut sheets, mut problems) = (Vec::new(), Vec::new());
     for (n, (title, start, end)) in sections.iter().enumerate() {
         let name = format!("{:02}-{}", n + 1, slug(title));
@@ -429,7 +582,12 @@ pub fn filmstrips(fc: &mut Client, dir: &std::path::Path, sections: &[(String, u
 
 /// One sheet of the frames where cards and zooms land (in edit.txt order), so the decisions
 /// edit.md made can be checked without opening the timeline.
-pub fn edit_frames(fc: &mut Client, dir: &std::path::Path, ops: &[Op], tb: Timebase) -> (Option<PathBuf>, Vec<String>) {
+pub fn edit_frames(
+    fc: &mut Client,
+    dir: &std::path::Path,
+    ops: &[Op],
+    tb: Timebase,
+) -> (Option<PathBuf>, Vec<String>) {
     // Most of a second in, so the card is up and the zoom has moved.
     let settle = u64::from(tb.num) * 3 / (4 * u64::from(tb.den));
     let at: Vec<u64> = ops
@@ -446,7 +604,15 @@ pub fn edit_frames(fc: &mut Client, dir: &std::path::Path, ops: &[Op], tb: Timeb
 
 /// Render `at` into `dir/<name>/NN.png` and tile them `cols` wide into `dir/<name>.jpg`
 /// (the PNG folder when ffmpeg can't).
-fn sheet(fc: &mut Client, dir: &std::path::Path, name: &str, at: &[u64], cols: usize, tb: Timebase, problems: &mut Vec<String>) -> Option<PathBuf> {
+fn sheet(
+    fc: &mut Client,
+    dir: &std::path::Path,
+    name: &str,
+    at: &[u64],
+    cols: usize,
+    tb: Timebase,
+    problems: &mut Vec<String>,
+) -> Option<PathBuf> {
     let frames_dir = dir.join(name);
     if let Err(e) = std::fs::create_dir_all(&frames_dir) {
         problems.push(format!("filmstrip {name}: {e}"));
@@ -462,9 +628,22 @@ fn sheet(fc: &mut Client, dir: &std::path::Path, name: &str, at: &[u64], cols: u
     }
     let sheet = dir.join(format!("{name}.jpg"));
     let tiled = std::process::Command::new("ffmpeg")
-        .args(["-hide_banner", "-loglevel", "error", "-y", "-framerate", "1", "-i"])
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-framerate",
+            "1",
+            "-i",
+        ])
         .arg(frames_dir.join("%02d.png"))
-        .args(["-frames:v", "1", "-vf", &format!("tile={cols}x{}", at.len().div_ceil(cols))])
+        .args([
+            "-frames:v",
+            "1",
+            "-vf",
+            &format!("tile={cols}x{}", at.len().div_ceil(cols)),
+        ])
         .arg(&sheet)
         .status()
         .is_ok_and(|s| s.success());
@@ -477,7 +656,13 @@ fn slug(s: &str) -> String {
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-").chars().take(32).collect()
+    s.split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+        .chars()
+        .take(32)
+        .collect()
 }
 
 /// `m:ss` for reports.
@@ -492,7 +677,13 @@ mod tests {
     use spearfia_core::project::Timebase;
 
     fn card(frame: u64, seconds: f64, text: &str, bounds: [f64; 4]) -> Card {
-        Card { from: format!("edit.md:{frame}"), frame, seconds, text: text.into(), bounds: Some(bounds) }
+        Card {
+            from: format!("edit.md:{frame}"),
+            frame,
+            seconds,
+            text: text.into(),
+            bounds: Some(bounds),
+        }
     }
 
     #[test]
@@ -501,8 +692,18 @@ mod tests {
         let plan: TimelinePlan = serde_json::from_value(json!({"$schema": "x", "timebase": tb, "items": [
             {"cue_id": "p1", "kind": "clip", "track": "V2", "start_frame": 60, "duration_frames": 540}]}))
         .unwrap();
-        let ops = [Op { frame: 50, action: Action::Transition { effect: "dip_to_black".into(), seconds: 0.5 }, from: "rule section".into() }];
-        let style: Style = serde_json::from_value(json!({"captions": {"enabled": true, "size": 72, "position": [0.5, 0.82]}})).unwrap();
+        let ops = [Op {
+            frame: 50,
+            action: Action::Transition {
+                effect: "dip_to_black".into(),
+                seconds: 0.5,
+            },
+            from: "rule section".into(),
+        }];
+        let style: Style = serde_json::from_value(
+            json!({"captions": {"enabled": true, "size": 72, "position": [0.5, 0.82]}}),
+        )
+        .unwrap();
         let fine = [700.0, 400.0, 1200.0, 600.0];
         let cards = [
             card(300, 3.0, "a b c", [-1028.0, 419.0, 2948.0, 712.0]),
@@ -512,14 +713,23 @@ mod tests {
             card(450, 3.0, "a b c", fine),
         ];
         let out = checks(&cards, &plan, &[], &ops, &style, [1920, 1080], tb);
-        let says = |frame: u64, what: &str| out.iter().any(|(f, m)| *f == frame && m.contains(what));
+        let says =
+            |frame: u64, what: &str| out.iter().any(|(f, m)| *f == frame && m.contains(what));
         assert!(says(300, "runs off the frame (3976×293 px"), "{out:?}");
         assert!(says(310, "reaches into the captions"), "{out:?}");
         assert!(says(0, "over black for 2.5 of its 3.0 s"), "{out:?}");
         assert!(says(400, "about 2.0 s needed"), "{out:?}");
         assert_eq!(out.len(), 4, "{out:?}");
         // An intro picture under the first card means it isn't over black.
-        let out = checks(&cards[2..3], &plan, &[(0, 60)], &ops, &style, [1920, 1080], tb);
+        let out = checks(
+            &cards[2..3],
+            &plan,
+            &[(0, 60)],
+            &ops,
+            &style,
+            [1920, 1080],
+            tb,
+        );
         assert!(out.is_empty(), "{out:?}");
     }
 }
