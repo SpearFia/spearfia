@@ -7,9 +7,10 @@ only after creator selections. The renderer now accepts explicit `sourceLabel`
 and `qualifier` props; auxiliary text is never inferred from the last body item.
 Deployment and HQ finalization remain disabled.
 
-Current creator policy (2026-11-01): new experiments use **pop only** and complete
-videos of at most two minutes. Do not deploy this system to the current John Wick
-project, GTA History or large videos. Application and HQ finalization remain
+Current creator policy (2026-11-03): overlay entrances use **pop**, the motion-scene
+families in `docs/motion-scene-cues.md` are allowed, and experiments may use complete
+videos of any length. Do not deploy this system to the current John Wick project or
+GTA History. Application and HQ finalization remain
 disabled independently of calibration. The Star 4 auditions and four-motion
 commands below document earlier work; preserve those artifacts rather than
 running another project trial.

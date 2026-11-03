@@ -7,10 +7,11 @@ followed by a separate proxy preview after layout selections. This is a specific
 preview exception; general deployment, GTA History and HQ finalization remain
 disabled. Preserve the archived review and current Stage 6 job controls.
 
-Current creator policy (2026-11-01): continue development on complete short videos
-of at most two minutes, using pop motion only. Deployment is disabled independently
-of calibration. Do not apply experimental editing to the current John Wick
-project, GTA History or large videos. Preserve the earlier Star 4 reviews.
+Current creator policy (2026-11-03): continue development on complete videos of any
+length. Overlay entrances use pop; the motion-scene families in
+[motion-scene-cues.md](motion-scene-cues.md) are allowed. Deployment is disabled
+independently of calibration. Do not apply experimental editing to the current John
+Wick project or GTA History. Preserve the earlier Star 4 reviews.
 
 The completed historical creator review contained 111 labels, but only thirteen
 windows had actual Clef responses. All thirteen chose keep; the creator wanted a
