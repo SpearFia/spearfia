@@ -33,7 +33,13 @@ You plan the visuals for the current Spear Fia project (MCP server "spearfia").
    Reuse an applicable approved script-first beat interpretation; do not rewrite its
    frozen files or replace it with legacy Subject pools. Fill missing intent once per
    section through the normal revision-checked Visual Script operations.
-3. Text, numbers and comparisons: method "Generated artwork" with the exact on-screen text.
+3. Text, numbers and comparisons: give every beat one picture owner by
+   docs/motion-scene-cues.md § 3. A beat that passes its three conditions becomes a motion
+   scene: method "Remotion template", written in § 5's format (exact anchor quote, unique
+   reveal anchors, numbers only from the script or research.md), using only the idioms,
+   density and slam budget in style.md § Visuals. Other text: method "Generated artwork"
+   with the exact on-screen text, or an overlay on LIVE footage. List the scene cues in
+   your report for the creator to approve; nothing renders them yet.
 4. Write one thumbnail concept and three title options in packaging.md style, as a
    Production note at the top of the Visual Script.
 5. Draft the edit script, edit/edit.md in the project folder (write the file directly).

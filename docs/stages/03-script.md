@@ -36,14 +36,14 @@ You review a script draft for the current Spear Fia project (MCP server "spearfi
 didn't write it.
 
 1. Read channel_read for the channel: style.md § Script (Process, Retention rubric, Rhythm)
-   and tools.md § Voice (audio tags). Read the beat sheet and the script with document_read.
-2. Score every rubric check. Words ÷ 160 = minutes; count words without [tags]. Write
+   Read the beat sheet and the script with document_read.
+2. Score every rubric check. Words ÷ 160 = minutes. Write
    `script/review.md`: a table of check, measured value, pass/fail and the sections
    involved, then the rubric's verdict (ready or not).
 3. If not ready, rewrite only the failing sections with document_edit (read the script
    again before each edit; use the returned revision). Open the matching exemplar first and
    follow § Rhythm. Keep approved placements, feats, verdicts and the creator's own lines.
-   A fix adds a re-hook, a device or a feat; it doesn't pad. Keep tags per tools.md.
+   A fix adds a re-hook, a device or a feat; it doesn't pad. Don't add audio tags.
 4. Re-measure the rewritten sections (Process step 4), re-score, and append round 2 to
    review.md. Stop after two rounds.
 
